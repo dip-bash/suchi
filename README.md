@@ -28,10 +28,23 @@ curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/uninstall.sh | b
 
 ## Usage
 
+Standard execution:
 ```bash
 suchi
 ```
-Running the command will display your current clipboard history stored by the GNOME extension.
+
+### Terminal Popup Examples
+If you want to launch `suchi` in a floating or sized popup window using a keyboard shortcut, use these commands:
+
+**For Kitty:**
+```bash
+kitty -o initial_window_width=80c -o initial_window_height=20c -o remember_window_size=no -- suchi
+```
+
+**For GNOME Terminal:**
+```bash
+gnome-terminal --geometry=80x20 -- suchi
+```
 
 ## Future Roadmap
 
@@ -43,13 +56,11 @@ Running the command will display your current clipboard history stored by the GN
 
 ## Contributing
 
-The goal is to move away from specific desktop environment dependencies and make this a universal Linux tool. If you can help with the following, feel free to open a Pull Request:
+The goal is to move away from specific desktop environment dependencies and make this a universal Linux tool. Contributions that help with the following are welcome via Pull Requests:
 
 *   Refactoring the backend to handle independent clipboard state.
 *   Adding support for X11/wl-clipboard integration.
 *   Improving the CLI interface for pinning and deleting items.
-
-All contributions that help remove external dependencies and increase compatibility are welcome.
 
 ---
 
