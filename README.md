@@ -1,3 +1,8 @@
+<p align="center">
+  <img src="https://github.com/dip-bash/img/blob/cf845804fa50814d2edc25f7445543fca4f9c7fb/suchi/suchi.png" alt="banner"/>
+</p>
+
+
 # suchi
 
 A minimalist CLI clipboard manager designed for GNOME/Wayland environments. It currently interfaces with the GNOME Clipboard Indicator extension to provide terminal-based access to your clipboard history.
