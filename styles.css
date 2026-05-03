@@ -1,0 +1,326 @@
+:root {
+    --bg-color: #09090b;
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --border-color: #27272a;
+    --surface-color: #09090b;
+    --surface-hover: #18181b;
+    --accent-color: #fafafa;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-secondary);
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Top Nav */
+.top-nav {
+    padding: 1.5rem 2rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.github-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.85rem;
+    transition: color 0.2s;
+}
+
+.github-btn:hover {
+    color: var(--text-primary);
+}
+
+.star-count-badge {
+    display: inline-flex;
+    align-items: center;
+    background-color: var(--surface-hover);
+    padding: 0.1rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    margin-left: 0.25rem;
+}
+
+.container {
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+    padding: 2rem;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.split-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5rem;
+    align-items: center;
+}
+
+/* Typography & Hero */
+.hero {
+    margin-bottom: 2rem;
+}
+
+h1 {
+    font-size: 3.5rem;
+    font-weight: 600;
+    letter-spacing: -0.04em;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    font-size: 1.25rem;
+    color: var(--text-primary);
+    margin-bottom: 0.75rem;
+    font-weight: 400;
+}
+
+.description {
+    font-size: 1rem;
+    max-width: 90%;
+    margin-bottom: 2.5rem;
+}
+
+/* Commands Section */
+.commands-section {
+    margin-bottom: 3rem;
+    width: 100%;
+    min-width: 0;
+}
+
+.command-tabs {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.cmd-tab {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    padding: 0.5rem 0;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.2s;
+}
+
+.cmd-tab:hover {
+    color: var(--text-primary);
+}
+
+.cmd-tab.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--text-primary);
+}
+
+.cta-container {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: var(--surface-hover);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.5rem;
+    width: 100%;
+    min-width: 0;
+}
+
+code {
+    font-family: "SF Mono", "Fira Code", monospace;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    padding-left: 0.5rem;
+    white-space: nowrap;
+    overflow-x: auto;
+    flex: 1;
+    min-width: 0;
+    margin-right: 1rem;
+}
+
+code::-webkit-scrollbar { display: none; }
+
+.btn {
+    background-color: var(--text-primary);
+    color: var(--bg-color);
+    border: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.btn:hover {
+    opacity: 0.9;
+}
+
+/* Minimal Features List */
+.features {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.feature-item h3 {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.feature-item p {
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+/* Terminal Window */
+.demo-section {
+    width: 100%;
+}
+
+.terminal-wrapper {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    margin-left: auto;
+}
+
+.terminal-window {
+    background-color: #000000;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    font-family: "SF Mono", "Fira Code", monospace;
+    outline: none;
+}
+
+.terminal-header {
+    background: #000000;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.window-controls {
+    display: flex;
+    gap: 6px;
+    position: absolute;
+}
+
+.control {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: #3f3f46;
+}
+
+.window-title {
+    margin: 0 auto;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.terminal-search-bar {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #18181b;
+}
+
+.search-label {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    margin-right: 0.5rem;
+}
+
+#demo-search {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    outline: none;
+}
+
+.terminal-list {
+    list-style: none;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.terminal-list::-webkit-scrollbar {
+    width: 0;
+}
+
+.terminal-item {
+    padding: 0.4rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.terminal-item .time-ago {
+    color: #52525b;
+    margin-left: 1rem;
+}
+
+.terminal-item.selected {
+    background-color: var(--surface-hover);
+    color: var(--text-primary);
+}
+
+.terminal-item.selected .time-ago {
+    color: var(--text-secondary);
+}
+
+.terminal-footer {
+    padding: 0.5rem 1rem;
+    font-size: 0.7rem;
+    color: #52525b;
+    border-top: 1px solid var(--border-color);
+}
+
+@media (max-width: 1024px) {
+    .split-layout {
+        grid-template-columns: 1fr;
+        gap: 3rem;
+    }
+    .terminal-wrapper {
+        margin: 0 auto;
+    }
+}
+
+/* Force left column to never expand past its grid track */
+.left-content {
+    min-width: 0;
+}

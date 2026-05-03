@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suchi | Terminal Clipboard Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="top-nav">
+        <a href="https://github.com/dip-bash/suchi" target="_blank" rel="noopener noreferrer" class="github-btn">
+            <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
+            </svg>
+            <span>Star on GitHub</span>
+            <span class="star-count-badge">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="margin-right: 4px; color: #eab308;">
+                    <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"></path>
+                </svg>
+                <span id="github-stars">...</span>
+            </span>
+        </a>
+    </nav>
+    <main class="container">
+        <div class="split-layout">
+            <div class="left-content">
+                <header class="hero">
+                    <h1>Suchi</h1>
+                    <p class="subtitle">The Terminal Clipboard Manager</p>
+                    <p class="description">Fuzzy search your clipboard history at the speed of thought.</p>
+
+                    <div class="commands-section">
+                        <div class="command-tabs">
+                            <button class="cmd-tab active" data-cmd="curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/install.sh | bash">Install</button>
+                            <button class="cmd-tab" data-cmd="curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/uninstall.sh | bash">Uninstall</button>
+                            <button class="cmd-tab" data-cmd="gnome-terminal --geometry=80x20 -- suchi">GNOME Terminal</button>
+                            <button class="cmd-tab" data-cmd="kitty -o initial_window_width=80c -o initial_window_height=20c -o remember_window_size=no -- suchi">Kitty Terminal</button>
+                        </div>
+                        <div class="cta-container">
+                            <code id="install-command">curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/install.sh | bash</code>
+                            <button id="copy-btn" class="btn">Copy</button>
+                        </div>
+                    </div>
+                </header>
+
+                <section class="features">
+                    <div class="feature-item">
+                        <h3>Terminal Native</h3>
+                        <p>Keep your hands on the keyboard. Manage your clipboard history entirely from the command line.</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>Fuzzy Search</h3>
+                        <p>Find that one link or command you copied 3 hours ago instantly with lightning-fast fuzzy matching.</p>
+                    </div>
+                    <div class="feature-item">
+                        <h3>Lightweight</h3>
+                        <p>Built in Python. Minimal dependencies, fast execution, and a low resource footprint.</p>
+                    </div>
+                </section>
+            </div>
+
+            <div class="right-content">
+                <section class="demo-section">
+                    <div class="terminal-wrapper">
+                        <div class="terminal-glow"></div>
+                        <div class="terminal-window" id="demo-terminal" tabindex="0">
+                            <div class="terminal-header">
+                                <div class="window-controls">
+                                    <span class="control close"></span>
+                                    <span class="control minimize"></span>
+                                    <span class="control maximize"></span>
+                                </div>
+                                <div class="window-title">suchi — bash</div>
+                            </div>
+                            <div class="terminal-search-bar">
+                                <span class="search-label">SEARCH:</span>
+                                <input type="text" id="demo-search" autocomplete="off" spellcheck="false">
+                            </div>
+                            <ul class="terminal-list" id="demo-list">
+                                <!-- Populated by JS -->
+                            </ul>
+                            <div class="terminal-footer">
+                                <span id="demo-count">10 items</span> | &uarr;&darr;: Navigate | ENTER: Copy | ESC: Exit
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+    
+    <script src="script.js"></script>
+</body>
+</html>
