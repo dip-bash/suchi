@@ -78,7 +78,6 @@ echo ""
 echo "• Binary Location:  $INSTALL_DIR/$BINARY_NAME"
 echo "• History Store:    ~/.cache/suchi/history.json"
 echo "• Daemon Status:    RUNNING (managed by systemd)"
-echo "You can now open the clipboard manager anytime by running: suchi"
 echo "=================================================================="// Random modification at 1787029216.70715
 // Random modification at 1787029216.781842
 // Random modification at 1787029216.804693
