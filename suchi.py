@@ -318,7 +318,6 @@ def draw_ui(stdscr, state, filtered, height, width):
     
     if state.sel_idx >= len(filtered) and len(filtered) > 0:
     elif len(filtered) == 0:
-        state.sel_idx = 0
     
     if state.sel_idx < state.start_idx:
         state.start_idx = state.sel_idx
