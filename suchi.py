@@ -149,11 +149,116 @@ def handle_input(key, stdscr, state, filtered_len):
         if filtered_len > 0:
             state.sel_idx = max(0, filtered_len - 1)
     elif key == curses.KEY_RESIZE:
-        pass 
+        if hasattr(curses, 'update_lines_cols'):
+            curses.update_lines_cols()
     elif 32 <= key <= 126:
         state.query += chr(key)
         state.sel_idx = 0
         state.start_idx = 0
+
+def draw_ui(stdscr, state, filtered, height, width):
+    if height < 4 or width < 15:
+        safe_addstr(stdscr, 0, 0, "Term too small")
+        stdscr.refresh()
+        return
+
+    list_h = height - 3
+    
+    if state.sel_idx >= len(filtered) and len(filtered) > 0:
+        state.sel_idx = len(filtered) - 1
+    elif len(filtered) == 0:
+        state.sel_idx = 0
+    
+    if state.sel_idx < state.start_idx:
+        state.start_idx = state.sel_idx
+    elif state.sel_idx >= state.start_idx + list_h:
+        state.start_idx = state.sel_idx - list_h + 1
+
+    header_text = f" SEARCH: {state.query}"
+    safe_addstr(stdscr, 0, 0, header_text.ljust(width - 1)[:width - 1], curses.color_pair(2) | curses.A_BOLD)
+    safe_addstr(stdscr, 1, 0, ("━" * (width - 1)), curses.color_pair(2) | curses.A_BOLD)
+
+    visible_items = filtered[state.start_idx : state.start_idx + list_h]
+    for i, (item, match_indices) in enumerate(visible_items):
+        y = i + 2
+        current_idx = state.start_idx + i
+        is_pinned = bool(item.get('pinned'))
+        has_newlines = '\n' in (item.get('text') or '')
+        raw = (item.get('text') or '').replace('\n', ' ').strip()
+        
+        ml_indicator = " ↵ " if has_newlines else ""
+        icon = "󰤱" if is_pinned else " "
+        
+        ts_ms = max(item.get('usedAt') or 0, item.get('copiedAt') or 0)
+        rel_time = get_relative_time(ts_ms)
+        time_padding = len(rel_time) + 2 if (rel_time and width > 45) else 0
+
+        try:
+            stdscr.move(y, 0)
+        except curses.error:
+            continue
+
+        if current_idx == state.sel_idx:
+            try:
+                stdscr.addstr(" ➜ ", curses.color_pair(1))
+                stdscr.addstr(icon + " ", curses.color_pair(1))
+            except curses.error: pass
+        else:
+            try:
+                stdscr.addstr("   ")
+                if is_pinned:
+                    stdscr.addstr("󰤱", curses.color_pair(3))
+                else:
+                    stdscr.addstr(" ")
+                stdscr.addstr(" ")
+            except curses.error: pass
+
+        _, curr_x = stdscr.getyx()
+        max_len = width - curr_x - time_padding - len(ml_indicator) - 1
+        if max_len < 0: max_len = 0
+        
+        display_text = raw[:max_len]
+        if len(raw) > max_len and max_len > 3:
+            display_text = raw[:max_len-3] + "..."
+
+        for c_idx, char in enumerate(display_text):
+            is_match = c_idx in match_indices
+            if current_idx == state.sel_idx:
+                attr = curses.color_pair(5) | curses.A_BOLD if is_match else curses.color_pair(1)
+            else:
+                attr = curses.color_pair(4) | curses.A_BOLD if is_match else curses.A_NORMAL
+            try:
+                stdscr.addstr(char, attr)
+            except curses.error: pass
+
+        _, curr_x = stdscr.getyx()
+
+        if ml_indicator:
+            attr = curses.color_pair(1) if current_idx == state.sel_idx else curses.A_DIM
+            try:
+                stdscr.addstr(ml_indicator, attr)
+            except curses.error: pass
+            _, curr_x = stdscr.getyx()
+
+        if current_idx == state.sel_idx:
+            pad_len = width - curr_x - time_padding - 1
+            if pad_len > 0:
+                try:
+                    stdscr.addstr(" " * pad_len, curses.color_pair(1))
+                except curses.error: pass
+
+        if time_padding > 0:
+            attr = curses.color_pair(1) if current_idx == state.sel_idx else curses.A_DIM
+            safe_addstr(stdscr, y, width - time_padding - 1, rel_time, attr)
+
+    fuzzy_status = "ON" if state.fuzzy_search else "OFF"
+    if state.show_shortcuts:
+        footer = f" Alt+f: Fuzzy ({fuzzy_status}) | Alt+j/k: Down/Up | Alt+h: Hide "
+    else:
+        footer = f" {len(filtered)} items | Fuzzy: {fuzzy_status} | Alt+h: Shortcuts | ENTER: Copy | ESC: Exit "
+    
+    safe_addstr(stdscr, height - 1, 0, footer.center(width - 1)[:width - 1], curses.A_DIM)
+    stdscr.refresh()
 
 def main(stdscr, file_path):
     curses.use_default_colors()
@@ -184,109 +289,7 @@ def main(stdscr, file_path):
         if needs_redraw:
             stdscr.clear()
             height, width = stdscr.getmaxyx()
-            
-            if height < 4 or width < 15:
-                safe_addstr(stdscr, 0, 0, "Term too small")
-                stdscr.refresh()
-            else:
-                list_h = height - 3
-                
-                if state.sel_idx >= len(filtered) and len(filtered) > 0:
-                    state.sel_idx = len(filtered) - 1
-                elif len(filtered) == 0:
-                    state.sel_idx = 0
-                
-                if state.sel_idx < state.start_idx:
-                    state.start_idx = state.sel_idx
-                elif state.sel_idx >= state.start_idx + list_h:
-                    state.start_idx = state.sel_idx - list_h + 1
-
-                header_text = f" SEARCH: {state.query}"
-                safe_addstr(stdscr, 0, 0, header_text.ljust(width - 1)[:width - 1], curses.color_pair(2) | curses.A_BOLD)
-                safe_addstr(stdscr, 1, 0, ("━" * (width - 1)), curses.color_pair(2) | curses.A_BOLD)
-
-                visible_items = filtered[state.start_idx : state.start_idx + list_h]
-                for i, (item, match_indices) in enumerate(visible_items):
-                    y = i + 2
-                    current_idx = state.start_idx + i
-                    is_pinned = bool(item.get('pinned'))
-                    has_newlines = '\n' in (item.get('text') or '')
-                    raw = (item.get('text') or '').replace('\n', ' ').strip()
-                    
-                    ml_indicator = " ↵ " if has_newlines else ""
-                    icon = "󰤱" if is_pinned else " "
-                    
-                    ts_ms = max(item.get('usedAt') or 0, item.get('copiedAt') or 0)
-                    rel_time = get_relative_time(ts_ms)
-                    time_padding = len(rel_time) + 2 if (rel_time and width > 45) else 0
-
-                    try:
-                        stdscr.move(y, 0)
-                    except curses.error:
-                        continue
-
-                    if current_idx == state.sel_idx:
-                        try:
-                            stdscr.addstr(" ➜ ", curses.color_pair(1))
-                            stdscr.addstr(icon + " ", curses.color_pair(1))
-                        except curses.error: pass
-                    else:
-                        try:
-                            stdscr.addstr("   ")
-                            if is_pinned:
-                                stdscr.addstr("󰤱", curses.color_pair(3))
-                            else:
-                                stdscr.addstr(" ")
-                            stdscr.addstr(" ")
-                        except curses.error: pass
-
-                    _, curr_x = stdscr.getyx()
-                    max_len = width - curr_x - time_padding - len(ml_indicator) - 1
-                    if max_len < 0: max_len = 0
-                    
-                    display_text = raw[:max_len]
-                    if len(raw) > max_len and max_len > 3:
-                        display_text = raw[:max_len-3] + "..."
-
-                    for c_idx, char in enumerate(display_text):
-                        is_match = c_idx in match_indices
-                        if current_idx == state.sel_idx:
-                            attr = curses.color_pair(5) | curses.A_BOLD if is_match else curses.color_pair(1)
-                        else:
-                            attr = curses.color_pair(4) | curses.A_BOLD if is_match else curses.A_NORMAL
-                        try:
-                            stdscr.addstr(char, attr)
-                        except curses.error: pass
-
-                    _, curr_x = stdscr.getyx()
-
-                    if ml_indicator:
-                        attr = curses.color_pair(1) if current_idx == state.sel_idx else curses.A_DIM
-                        try:
-                            stdscr.addstr(ml_indicator, attr)
-                        except curses.error: pass
-                        _, curr_x = stdscr.getyx()
-
-                    if current_idx == state.sel_idx:
-                        pad_len = width - curr_x - time_padding - 1
-                        if pad_len > 0:
-                            try:
-                                stdscr.addstr(" " * pad_len, curses.color_pair(1))
-                            except curses.error: pass
-
-                    if time_padding > 0:
-                        attr = curses.color_pair(1) if current_idx == state.sel_idx else curses.A_DIM
-                        safe_addstr(stdscr, y, width - time_padding - 1, rel_time, attr)
-
-                fuzzy_status = "ON" if state.fuzzy_search else "OFF"
-                if state.show_shortcuts:
-                    footer = f" Alt+f: Fuzzy ({fuzzy_status}) | Alt+j/k: Down/Up | Alt+h: Hide "
-                else:
-                    footer = f" {len(filtered)} items | Fuzzy: {fuzzy_status} | Alt+h: Shortcuts | ENTER: Copy | ESC: Exit "
-                
-                safe_addstr(stdscr, height - 1, 0, footer.center(width - 1)[:width - 1], curses.A_DIM)
-
-            stdscr.refresh()
+            draw_ui(stdscr, state, filtered, height, width)
             needs_redraw = False
         
         stdscr.timeout(200) 
