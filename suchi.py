@@ -14,6 +14,8 @@ class AppState:
         self.start_idx = 0
         self.running = True
         self.copy_item = None
+        self.fuzzy_search = False
+        self.show_shortcuts = False
 
 def validate_and_load(path, limit=100):
     if not os.path.exists(path):
@@ -50,26 +52,39 @@ def copy_to_wayland(text):
     except Exception:
         pass
 
-def get_filtered_data(query, data):
+def get_filtered_data(query, data, fuzzy=False):
     if not query:
         return [(item, []) for item in data]
-    q_chars = query.lower().replace(" ", "")
+    
     result = []
-    for item in data:
-        raw = (item.get('text') or '').replace('\n', ' ').strip()
-        raw_low = raw.lower()
-        txt_idx = 0
-        match = True
-        indices = []
-        for char in q_chars:
-            txt_idx = raw_low.find(char, txt_idx)
-            if txt_idx == -1:
-                match = False
-                break
-            indices.append(txt_idx)
-            txt_idx += 1
-        if match:
-            result.append((item, indices))
+    
+    if fuzzy:
+        q_chars = query.lower().replace(" ", "")
+        for item in data:
+            raw = (item.get('text') or '').replace('\n', ' ').strip()
+            raw_low = raw.lower()
+            txt_idx = 0
+            match = True
+            indices = []
+            for char in q_chars:
+                txt_idx = raw_low.find(char, txt_idx)
+                if txt_idx == -1:
+                    match = False
+                    break
+                indices.append(txt_idx)
+                txt_idx += 1
+            if match:
+                result.append((item, indices))
+    else:
+        q_chars = query.lower()
+        for item in data:
+            raw = (item.get('text') or '').replace('\n', ' ').strip()
+            raw_low = raw.lower()
+            idx = raw_low.find(q_chars)
+            if idx != -1:
+                indices = list(range(idx, idx + len(q_chars)))
+                result.append((item, indices))
+                
     return result
 
 def get_relative_time(ts_ms):
@@ -102,6 +117,12 @@ def handle_input(key, stdscr, state, filtered_len):
         elif next_key == ord('k'):
             if state.sel_idx > 0:
                 state.sel_idx -= 1
+        elif next_key == ord('f'):
+            state.fuzzy_search = not state.fuzzy_search
+            state.sel_idx = 0
+            state.start_idx = 0
+        elif next_key == ord('h'):
+            state.show_shortcuts = not state.show_shortcuts
     elif key in (curses.KEY_ENTER, 10, 13):
         if filtered_len > 0:
             state.copy_item = True
@@ -154,7 +175,7 @@ def main(stdscr, file_path):
             current_mtime = os.path.getmtime(file_path)
             if current_mtime > last_mtime:
                 data = validate_and_load(file_path, 100)
-                filtered = get_filtered_data(state.query, data)
+                filtered = get_filtered_data(state.query, data, state.fuzzy_search)
                 last_mtime = current_mtime
                 needs_redraw = True
         except OSError:
@@ -257,7 +278,12 @@ def main(stdscr, file_path):
                         attr = curses.color_pair(1) if current_idx == state.sel_idx else curses.A_DIM
                         safe_addstr(stdscr, y, width - time_padding - 1, rel_time, attr)
 
-                footer = f" {len(filtered)} items | ENTER: Copy | ESC: Exit "
+                fuzzy_status = "ON" if state.fuzzy_search else "OFF"
+                if state.show_shortcuts:
+                    footer = f" Alt+f: Fuzzy ({fuzzy_status}) | Alt+j/k: Down/Up | Alt+h: Hide "
+                else:
+                    footer = f" {len(filtered)} items | Fuzzy: {fuzzy_status} | Alt+h: Shortcuts | ENTER: Copy | ESC: Exit "
+                
                 safe_addstr(stdscr, height - 1, 0, footer.center(width - 1)[:width - 1], curses.A_DIM)
 
             stdscr.refresh()
@@ -272,7 +298,7 @@ def main(stdscr, file_path):
             handle_input(key, stdscr, state, len(filtered))
             
             if state.running and state.query != old_query:
-                filtered = get_filtered_data(state.query, data)
+                filtered = get_filtered_data(state.query, data, state.fuzzy_search)
                 
             if state.copy_item:
                 state.copy_item = filtered[state.sel_idx][0]
