@@ -366,7 +366,6 @@ def draw_ui(stdscr, state, filtered, height, width):
         _, curr_x = stdscr.getyx()
         max_len = width - curr_x - time_padding - len(ml_indicator) - 1
         if max_len < 0: max_len = 0
-        
         display_text = raw[:max_len]
         if len(raw) > max_len and max_len > 3:
             display_text = raw[:max_len-3] + "..."
