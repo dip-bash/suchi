@@ -470,7 +470,6 @@ def daemonize():
         if pid > 0:
             sys.exit(0)
     except OSError as e:
-        sys.stderr.write(f"Fork #1 failed: {e}\n")
         sys.exit(1)
 
     os.chdir("/")
