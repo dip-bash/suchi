@@ -13,7 +13,6 @@ if [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
     echo "Error: 'suchi' requires an active X11 or Wayland session."
     exit 1
 fi
-
 # 2. Automatically install required dependencies for Debian-based systems
 if [ -f /etc/debian_version ]; then
     echo "Debian-based system detected. Checking dependencies..."
