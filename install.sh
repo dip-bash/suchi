@@ -66,7 +66,6 @@ Type=simple
 ExecStart=$INSTALL_DIR/$BINARY_NAME --demon --foreground
 Restart=always
 RestartSec=3
-
 [Install]
 WantedBy=default.target
 EOF
