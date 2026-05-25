@@ -525,7 +525,6 @@ def run_daemon(args):
     if args.selection == "clipboard":
         target_atom = libX11.XInternAtom(disp, b"CLIPBOARD", False_)
     else:
-        target_atom = XA_PRIMARY
 
     libXfixes.XFixesSelectSelectionInput(
         disp, root, target_atom, XFixesSetSelectionOwnerNotifyMask
