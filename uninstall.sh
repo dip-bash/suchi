@@ -13,7 +13,6 @@ SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
     systemctl --user daemon-reload
     echo "Daemon removed."
 else
-    echo "Info: No daemon service found (old version detected or already removed)."
 fi
 
 # 2. Remove the binary (works for both old and new versions)
