@@ -29,7 +29,6 @@ fi
 if [ -d "$HOME/.cache/suchi" ]; then
     echo ""
     echo "Note: Your clipboard history is still saved at ~/.cache/suchi/history.json."
-    echo "If you want to completely remove your clipboard data, run:"
     echo "rm -rf ~/.cache/suchi"
 
 echo "Uninstallation complete."
