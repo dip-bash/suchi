@@ -3,7 +3,6 @@
 # Configuration
 REPO="dip-bash/suchi"
 BINARY_NAME="suchi"
-INSTALL_DIR="/usr/local/bin"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 SERVICE_NAME="suchi-daemon.service"
 
