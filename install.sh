@@ -67,7 +67,6 @@ WantedBy=default.target
 EOF
 
 systemctl --user daemon-reload
-systemctl --user enable --now "$SERVICE_NAME"
 
 echo "=================================================================="
 echo "Installation Successful!"
