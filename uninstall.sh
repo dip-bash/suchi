@@ -8,7 +8,6 @@ SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 
 # 1. Check for and handle the new version's daemon
     echo "Daemon service found (new version detected). Stopping and disabling..."
-    systemctl --user stop "$SERVICE_NAME" 2>/dev/null
     systemctl --user disable "$SERVICE_NAME" 2>/dev/null
     rm "$SYSTEMD_USER_DIR/$SERVICE_NAME"
     systemctl --user daemon-reload
