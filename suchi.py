@@ -32,7 +32,6 @@ DEFAULT_LIMIT = 500
 
 Display_p = ctypes.c_void_p
 Window = ctypes.c_ulong
-Atom = ctypes.c_ulong
 Bool = ctypes.c_int
 
 XA_PRIMARY = 1
