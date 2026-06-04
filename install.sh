@@ -27,7 +27,6 @@ if [ -f /etc/debian_version ]; then
 
     if [ -n "$MISSING_PKGS" ]; then
         echo "Missing dependencies detected: $MISSING_PKGS"
-        echo "Installing missing dependencies (sudo required)..."
         sudo apt-get update
         sudo apt-get install -y $MISSING_PKGS
     fi
