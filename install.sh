@@ -49,7 +49,6 @@ echo "Installing to $INSTALL_DIR (sudo required)..."
 sudo mv $BINARY_NAME "$INSTALL_DIR/$BINARY_NAME"
 
 # 5. Create and enable the systemd user service for the background daemon
-echo "Configuring the background clipboard watcher daemon..."
 mkdir -p "$SYSTEMD_USER_DIR"
 
 cat <<EOF > "$SYSTEMD_USER_DIR/$SERVICE_NAME"
