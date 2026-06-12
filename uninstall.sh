@@ -30,7 +30,6 @@ else
     echo "Info: $BINARY_NAME was not found in $INSTALL_DIR."
 fi
 
-# 3. Optional: Mention the clipboard history directory
 if [ -d "$HOME/.cache/suchi" ]; then
     echo ""
     echo "Note: Your clipboard history is still saved at ~/.cache/suchi/history.json."
