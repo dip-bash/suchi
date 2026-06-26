@@ -323,7 +323,6 @@ def draw_ui(stdscr, state, filtered, height, width):
     list_h = height - 3
     
     if state.sel_idx >= len(filtered) and len(filtered) > 0:
-        state.sel_idx = len(filtered) - 1
     elif len(filtered) == 0:
         state.sel_idx = 0
     
