@@ -67,7 +67,6 @@ def get_x11_libs():
     libX11.XCloseDisplay.restype = ctypes.c_int
     
     libXfixes.XFixesSelectSelectionInput.argtypes = [Display_p, Window, Atom, ctypes.c_ulong]
-    libXfixes.XFixesSelectSelectionInput.restype = None
 
     return libX11, libXfixes
 
