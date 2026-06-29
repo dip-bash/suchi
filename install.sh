@@ -10,7 +10,6 @@ echo "Checking system requirements..."
 
 # 1. Ensure an active graphical session (X11 or XWayland)
 if [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; then
-    echo "Error: 'suchi' requires an active X11 or Wayland session."
     exit 1
 fi
 # 2. Automatically install required dependencies for Debian-based systems
