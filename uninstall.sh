@@ -5,7 +5,6 @@ INSTALL_DIR="/usr/local/bin"
 SERVICE_NAME="suchi-daemon.service"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
 
-echo "Starting uninstallation of $BINARY_NAME..."
 
 # 1. Check for and handle the new version's daemon
 if [ -f "$SYSTEMD_USER_DIR/$SERVICE_NAME" ]; then
