@@ -21,7 +21,6 @@ if [ -f /etc/debian_version ]; then
             MISSING_PKGS="$MISSING_PKGS $pkg"
         fi
     done
-
     if [ -n "$MISSING_PKGS" ]; then
         echo "Missing dependencies detected: $MISSING_PKGS"
         sudo apt-get update
