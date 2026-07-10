@@ -12,7 +12,6 @@ SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
     rm "$SYSTEMD_USER_DIR/$SERVICE_NAME"
     systemctl --user daemon-reload
     echo "Daemon removed."
-else
 fi
 
 # 2. Remove the binary (works for both old and new versions)
