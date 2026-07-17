@@ -204,7 +204,6 @@ class AppState:
         self.copy_item = None
         self.fuzzy_search = False
         self.show_shortcuts = False
-
 def get_filtered_data(query, data, fuzzy=False):
     if not query:
         return [(item, []) for item in data]
