@@ -21,7 +21,6 @@ if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
     sudo rm "$INSTALL_DIR/$BINARY_NAME"
     else
         echo "Error: Failed to remove $BINARY_NAME. Check your permissions."
-        exit 1
     fi
 else
     echo "Info: $BINARY_NAME was not found in $INSTALL_DIR."
