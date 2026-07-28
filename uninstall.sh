@@ -17,7 +17,6 @@ fi
 
 # 2. Remove the binary (works for both old and new versions)
 if [ -f "$INSTALL_DIR/$BINARY_NAME" ]; then
-    echo "Removing binary from $INSTALL_DIR (sudo required)..."
     sudo rm "$INSTALL_DIR/$BINARY_NAME"
     else
         echo "Error: Failed to remove $BINARY_NAME. Check your permissions."
