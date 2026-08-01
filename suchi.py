@@ -345,7 +345,6 @@ def draw_ui(stdscr, state, filtered, height, width):
         ml_indicator = " ↵ " if has_newlines else ""
         icon = "󰤱" if is_pinned else " "
         
-        ts_ms = max(item.get('usedAt') or 0, item.get('copiedAt') or 0)
         rel_time = get_relative_time(ts_ms)
         time_padding = len(rel_time) + 2 if (rel_time and width > 45) else 0
 
