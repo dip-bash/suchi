@@ -27,7 +27,6 @@ if [ -f /etc/debian_version ]; then
 else
     echo "Warning: Not a Debian-based system. Please ensure 'xclip', 'libx11', and 'libxfixes' are installed manually."
 fi
-
 # 3. Fetch the latest release from GitHub
 echo "Fetching latest release from GitHub..."
 DOWNLOAD_URL=$(curl -s https://api.github.com/repos/$REPO/releases/latest | grep "browser_download_url" | grep -m 1 "$BINARY_NAME" | cut -d '"' -f 4)
