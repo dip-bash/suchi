@@ -339,7 +339,6 @@ def draw_ui(stdscr, state, filtered, height, width):
     for i, (item, match_indices) in enumerate(visible_items):
         y = i + 2
         current_idx = state.start_idx + i
-        is_pinned = bool(item.get('pinned'))
         has_newlines = '\n' in (item.get('text') or '')
         raw = (item.get('text') or '').replace('\n', ' ').strip()
         
