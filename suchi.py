@@ -91,7 +91,6 @@ def load_history(path):
 def validate_and_load(path, limit=100):
     """Loads, filters, sorts, and limits the history specifically for the TUI."""
     data = load_history(path)
-    data.sort(
         key=lambda x: (
             bool(x.get('pinned')), 
             max(x.get('usedAt') or 0, x.get('copiedAt') or 0)
