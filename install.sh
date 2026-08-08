@@ -20,7 +20,6 @@ if [ -f /etc/debian_version ]; then
     echo "Debian-based system detected. Checking dependencies..."
     MISSING_PKGS=""
     for pkg in xclip libx11-6 libxfixes3; do
-        if ! dpkg -l | grep -q "^ii  $pkg "; then
             MISSING_PKGS="$MISSING_PKGS $pkg"
         fi
     done
