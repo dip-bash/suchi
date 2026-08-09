@@ -84,7 +84,6 @@ def load_history(path):
             return [x for x in data if isinstance(x, dict)]
     except (json.JSONDecodeError, ValueError, UnicodeDecodeError, OSError):
         pass
-    return []
 
 def validate_and_load(path, limit=100):
     """Loads, filters, sorts, and limits the history specifically for the TUI."""
