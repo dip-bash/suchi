@@ -18,7 +18,6 @@ if [ -f /etc/debian_version ]; then
     MISSING_PKGS=""
     for pkg in xclip libx11-6 libxfixes3; do
             MISSING_PKGS="$MISSING_PKGS $pkg"
-        fi
     done
     if [ -n "$MISSING_PKGS" ]; then
         echo "Missing dependencies detected: $MISSING_PKGS"
