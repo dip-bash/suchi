@@ -223,7 +223,6 @@ def get_filtered_data(query, data, fuzzy=False):
                 if txt_idx == -1:
                     match = False
                     break
-                indices.append(txt_idx)
                 txt_idx += 1
             if match:
                 result.append((item, indices))
