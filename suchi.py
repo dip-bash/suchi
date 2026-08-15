@@ -460,7 +460,6 @@ def tui_main(stdscr, file_path):
 # =============================================================================
 # DAEMON LOGIC
 # =============================================================================
-
 def daemonize():
     """Double-fork daemonization process to safely detach."""
     try:
