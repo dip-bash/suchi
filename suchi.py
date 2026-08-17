@@ -1,11 +1,205 @@
-import json
-import curses
+#!/usr/bin/env python3
+"""
+suchi - Combined X11 Clipboard Daemon and TUI.
+Dev - Saumyadip Jana, contact: saumyadip.social@gmail.com
+
+Compiling with Nuitka:
+    python3 -m nuitka --onefile suchi.py
+
+Usage:
+    ./suchi.bin --demon       # Creates a persistent background daemon watching the clipboard
+    ./suchi.bin               # Opens the TUI to browse and use clipboard history
+"""
+
+import sys
 import os
+import json
 import time
+import ctypes
 import subprocess
 import argparse
+import curses
+from ctypes.util import find_library
 
+# Apply UI configurations
 os.environ.setdefault('ESCDELAY', '25')
+
+DEFAULT_HISTORY_PATH = os.path.expanduser("~/.cache/suchi/history.json")
+DEFAULT_LIMIT = 500
+
+# =============================================================================
+# X11 CTYPES DEFINITIONS (Lazy-loaded to avoid crashing TUI on non-X11 envs)
+# =============================================================================
+
+Display_p = ctypes.c_void_p
+Window = ctypes.c_ulong
+Atom = ctypes.c_ulong
+Bool = ctypes.c_int
+
+XA_PRIMARY = 1
+False_ = 0
+XFixesSetSelectionOwnerNotifyMask = 1 << 0
+
+class XEvent(ctypes.Structure):
+    _fields_ = [("pad", ctypes.c_long * 24)]  # padding, big enough for the union
+
+def get_x11_libs():
+    """Initializes and returns libX11 and libXfixes using ctypes."""
+    x11_path = find_library("X11")
+    xfixes_path = find_library("Xfixes")
+
+    if not x11_path or not xfixes_path:
+        sys.stderr.write("Could not find libX11 or libXfixes. Install libx11-6 / libxfixes3.\n")
+        sys.exit(1)
+
+    libX11 = ctypes.cdll.LoadLibrary(x11_path)
+    libXfixes = ctypes.cdll.LoadLibrary(xfixes_path)
+
+    libX11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    libX11.XOpenDisplay.restype = Display_p
+    libX11.XDefaultRootWindow.argtypes = [Display_p]
+    libX11.XDefaultRootWindow.restype = Window
+    libX11.XInternAtom.argtypes = [Display_p, ctypes.c_char_p, Bool]
+    libX11.XInternAtom.restype = Atom
+
+    libX11.XNextEvent.argtypes = [Display_p, ctypes.POINTER(XEvent)]
+    libX11.XNextEvent.restype = ctypes.c_int
+    libX11.XCloseDisplay.argtypes = [Display_p]
+    libX11.XCloseDisplay.restype = ctypes.c_int
+    
+    libXfixes.XFixesSelectSelectionInput.argtypes = [Display_p, Window, Atom, ctypes.c_ulong]
+    libXfixes.XFixesSelectSelectionInput.restype = None
+
+    return libX11, libXfixes
+
+# =============================================================================
+# HISTORY MANAGEMENT
+# =============================================================================
+
+def load_history(path):
+    """Loads the full history file."""
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            return [x for x in data if isinstance(x, dict)]
+    except (json.JSONDecodeError, ValueError, UnicodeDecodeError, OSError):
+        pass
+    return []
+
+def validate_and_load(path, limit=100):
+    """Loads, filters, sorts, and limits the history specifically for the TUI."""
+    data = load_history(path)
+    data.sort(
+        key=lambda x: (
+            bool(x.get('pinned')), 
+            max(x.get('usedAt') or 0, x.get('copiedAt') or 0)
+        ), 
+        reverse=True
+    )
+    return data[:limit]
+
+def save_history(path, data, limit):
+    """Trims history to the limit (exempting pinned items) and saves atomically."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    pinned = [x for x in data if x.get("pinned")]
+    unpinned = [x for x in data if not x.get("pinned")]
+    unpinned = unpinned[: max(0, limit - len(pinned))]
+    trimmed = pinned + unpinned
+    trimmed.sort(
+        key=lambda x: (
+            bool(x.get("pinned")),
+            max(x.get("usedAt") or 0, x.get("copiedAt") or 0),
+        ),
+        reverse=True,
+    )
+    tmp_path = path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(trimmed, f, ensure_ascii=False)
+    os.replace(tmp_path, path)
+
+def add_clip(path, text, limit):
+    """Adds a new text snippet to the history, managing duplicates."""
+    if text is None:
+        return
+    # xclip adds one trailing newline for plain single-line copies; drop just that one
+    if text.endswith("\n"):
+        text = text[:-1]
+    if not text.strip():
+        return
+
+    data = load_history(path)
+    now_ms = int(time.time() * 1000)
+
+    # Bump instead of duplicating
+    for item in data:
+        if item.get("text") == text:
+            item["copiedAt"] = now_ms
+            save_history(path, data, limit)
+            return
+
+    data.insert(0, {"text": text, "pinned": False, "copiedAt": now_ms, "usedAt": 0})
+    save_history(path, data, limit)
+
+def touch_used(path, text):
+    """Marks an item as recently used to bump it to the top of the TUI."""
+    data = load_history(path)
+    now_ms = int(time.time() * 1000)
+    found = False
+    for item in data:
+        if item.get('text') == text:
+            item['usedAt'] = now_ms
+            found = True
+            break
+    if not found:
+        return
+    try:
+        tmp_path = path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp_path, path)
+    except OSError:
+        pass
+
+# =============================================================================
+# XCLIP UTILITIES
+# =============================================================================
+
+def get_clipboard_text(selection):
+    """Grabs current selection text via xclip."""
+    try:
+        result = subprocess.run(
+            ["xclip", "-selection", selection, "-o"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+        if result.returncode != 0:
+            return None
+        return result.stdout.decode("utf-8", errors="replace")
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+def copy_to_x11(text, selection='clipboard'):
+    """Pushes a string to the X11 clipboard using xclip."""
+    try:
+        process = subprocess.Popen(
+            ['xclip', '-selection', selection, '-i'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True
+        )
+        process.stdin.write(text.encode('utf-8'))
+        process.stdin.close()
+    except Exception:
+        pass
+
+# =============================================================================
+# TUI COMPONENTS
+# =============================================================================
 
 class AppState:
     def __init__(self):
@@ -16,41 +210,6 @@ class AppState:
         self.copy_item = None
         self.fuzzy_search = False
         self.show_shortcuts = False
-
-def validate_and_load(path, limit=100):
-    if not os.path.exists(path):
-        return []
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if not isinstance(data, list):
-                return []
-            data = [x for x in data if isinstance(x, dict)]
-            data.sort(
-                key=lambda x: (
-                    bool(x.get('pinned')), 
-                    max(x.get('usedAt') or 0, x.get('copiedAt') or 0)
-                ), 
-                reverse=True
-            )
-            return data[:limit]
-    except (json.JSONDecodeError, ValueError, UnicodeDecodeError, OSError):
-        return []
-
-def copy_to_wayland(text):
-    try:
-        # Fully detach the process from the terminal so GNOME terminal can close instantly
-        process = subprocess.Popen(
-            ['wl-copy'], 
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True  # Create a new session, detaching from the parent terminal
-        )
-        process.stdin.write(text.encode('utf-8'))
-        process.stdin.close() # Close stdin to signal EOF to wl-copy
-    except Exception:
-        pass
 
 def get_filtered_data(query, data, fuzzy=False):
     if not query:
@@ -260,7 +419,7 @@ def draw_ui(stdscr, state, filtered, height, width):
     safe_addstr(stdscr, height - 1, 0, footer.center(width - 1)[:width - 1], curses.A_DIM)
     stdscr.refresh()
 
-def main(stdscr, file_path):
+def tui_main(stdscr, file_path):
     curses.use_default_colors()
     curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)
     curses.init_pair(2, curses.COLOR_CYAN, -1)
@@ -306,15 +465,140 @@ def main(stdscr, file_path):
             if state.copy_item:
                 state.copy_item = filtered[state.sel_idx][0]
 
-    # Outside the while loop: Wait for curses to shut down, then copy
     return state.copy_item
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("file", nargs="?", default=os.path.expanduser("~/.cache/gnome-clipboard@b00f.github.io/history.json"))
-    args = parser.parse_args()
+# =============================================================================
+# DAEMON LOGIC
+# =============================================================================
+
+def daemonize():
+    """Double-fork daemonization process to safely detach."""
+    try:
+        pid = os.fork()
+        if pid > 0:
+            sys.exit(0)
+    except OSError as e:
+        sys.stderr.write(f"Fork #1 failed: {e}\n")
+        sys.exit(1)
+
+    os.chdir("/")
+    os.setsid()
+    os.umask(0)
+
+    try:
+        pid = os.fork()
+        if pid > 0:
+            sys.exit(0)
+    except OSError as e:
+        sys.stderr.write(f"Fork #2 failed: {e}\n")
+        sys.exit(1)
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    # Redirect standard file descriptors
+    with open(os.devnull, 'r') as f:
+        os.dup2(f.fileno(), sys.stdin.fileno())
+    with open(os.devnull, 'a+') as f:
+        os.dup2(f.fileno(), sys.stdout.fileno())
+        os.dup2(f.fileno(), sys.stderr.fileno())
+
+def run_daemon(args):
+    """X11 connection and while loop to persistently watch the clipboard."""
+    libX11, libXfixes = get_x11_libs()
+
+    try:
+        subprocess.run(
+            ["xclip", "-version"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+    except (FileNotFoundError, OSError):
+        sys.stderr.write("xclip not found. Install it first: sudo apt install xclip\n")
+        sys.exit(1)
+
+    disp = libX11.XOpenDisplay(None)
+    if not disp:
+        sys.stderr.write("Can't open X display\n")
+        sys.exit(1)
+
+    root = libX11.XDefaultRootWindow(disp)
+    if args.selection == "clipboard":
+        target_atom = libX11.XInternAtom(disp, b"CLIPBOARD", False_)
+    else:
+        target_atom = XA_PRIMARY
+
+    libXfixes.XFixesSelectSelectionInput(
+        disp, root, target_atom, XFixesSetSelectionOwnerNotifyMask
+    )
+
+    evt = XEvent()
+    last_text = None
+
+    try:
+        while True:
+            libX11.XNextEvent(disp, ctypes.byref(evt))
+            time.sleep(0.05)
+            text = get_clipboard_text(args.selection)
+            if text is None or text == last_text:
+                continue
+            last_text = text
+            add_clip(args.file, text, args.limit)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        libX11.XCloseDisplay(disp)
+
+# =============================================================================
+# MAIN ENTRYPOINT
+# =============================================================================
+
+def main():
+    parser = argparse.ArgumentParser(description="suchi - X11 Clipboard Manager & TUI")
     
-    copy_item = curses.wrapper(main, args.file)
-    if copy_item:
-        text_to_copy = copy_item.get('text') or ''
-        copy_to_wayland(text_to_copy)
+    parser.add_argument(
+        "--demon", "--daemon",
+        action="store_true",
+        help="Run the clipboard watcher as a persistent background daemon"
+    )
+    parser.add_argument(
+        "--foreground",
+        action="store_true",
+        help="Run daemon in foreground without detaching (used with --demon)"
+    )
+    parser.add_argument(
+        "-f", "--file",
+        default=DEFAULT_HISTORY_PATH,
+        help=f"History JSON path (default: {DEFAULT_HISTORY_PATH})"
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=DEFAULT_LIMIT,
+        help=f"Max stored entries for the daemon (default: {DEFAULT_LIMIT})"
+    )
+    parser.add_argument(
+        "-s", "--selection",
+        default="clipboard",
+        choices=["clipboard", "primary"],
+        help="Which X selection to watch in daemon mode (default: clipboard)"
+    )
+    
+    args = parser.parse_args()
+
+    if args.demon:
+        if not args.foreground:
+            print(f"Starting suchi daemon in background (watching '{args.selection}' -> {args.file})")
+            daemonize()
+        run_daemon(args)
+    else:
+        # Standard execution runs the TUI
+        copy_item = curses.wrapper(tui_main, args.file)
+        if copy_item:
+            text_to_copy = copy_item.get('text') or ''
+            touch_used(args.file, text_to_copy)
+            copy_to_x11(text_to_copy)
+
+if __name__ == "__main__":
+    main()
