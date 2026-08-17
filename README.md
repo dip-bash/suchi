@@ -10,10 +10,10 @@ A minimalist CLI clipboard manager designed for GNOME/Wayland environments. It c
 ## Prerequisites
 
 Before installing, ensure your system meets these requirements:
-*   **OS:** Debian-based Linux.
-*   **Desktop:** GNOME.
-*   **Display Server:** Wayland.
-*   **Extension:** [Clipboard Indicator](https://extensions.gnome.org/extension/4422/gnome-clipboard/) must be installed and active.
+*   **OS:** Linux.
+*   **Display Server:** xWayland or x11.
+*   **Dependencies:** `xclip`, `libx11-6`, and `libxfixes3`. 
+    * *Note: The installation script automatically detects Debian 12 and other Debian-based distributions to install these dependencies via `apt`.*
 
 ## Installation
 
@@ -37,6 +37,23 @@ Standard execution:
 ```bash
 suchi
 ```
+**TUI Shortcuts:**
+* **`Enter`**: Copy the selected item and exit.
+* **`Esc`**: Exit the UI.
+* **`Alt+f`**: Toggle Fuzzy Searching.
+* **`Alt+j` / `Alt+k**`: Navigate down/up.
+* **`Alt+h`**: Toggle the shortcut help menu.
+
+### Background Daemon
+
+The systemd service automatically starts the daemon in the background on boot. You can check its status using:
+```bash
+systemctl --user status suchi-daemon.service
+```
+If you ever need to manually run the daemon independent of systemd, use:
+```bash
+suchi --demon
+```
 
 ### Terminal Popup Examples
 If you want to launch `suchi` in a floating or sized popup window using a keyboard shortcut, use these commands:
@@ -54,19 +71,16 @@ gnome-terminal --geometry=80x20 -- suchi
 ## Future Roadmap
 
 *   Add ability to delete specific entries directly from the CLI.
-*   Implement pinning functionality for important snippets.
-*   Remove strict dependencies on Debian and GNOME.
-*   Remove the requirement for the Clipboard Indicator extension.
-*   Support for X11 and other desktop environments.
+*   Implement pinning functionality for important snippets or other tab for snippets.
+*   Add commands shortcuts
+*   URL checker
+*   Text extender-> type :mail in any place gives full email address
 
 ## Contributing
 
-The goal is to move away from specific desktop environment dependencies and make this a universal Linux tool. Contributions that help with the following are welcome via Pull Requests:
-
-*   Refactoring the backend to handle independent clipboard state.
-*   Adding support for X11/wl-clipboard integration.
-*   Improving the CLI interface for pinning and deleting items.
+* Adding an interactive keybind (e.g., `Ctrl+p`) in the TUI for pinning and unpinning items.
+* Adding a keybind (e.g., `Delete` or `d`) for removing specific items.
 
 ---
 
-**Development Note:** This project is in active development. If you encounter issues with the history file path, verify that the GNOME extension is generating `history.json` in your `~/.cache` directory.
+**Development Note:** The application data is stored in `~/.cache/suchi/history.json`.
