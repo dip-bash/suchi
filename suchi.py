@@ -32,6 +32,7 @@ DEFAULT_LIMIT = 500
 
 Display_p = ctypes.c_void_p
 Window = ctypes.c_ulong
+Atom = ctypes.c_ulong
 Bool = ctypes.c_int
 
 XA_PRIMARY = 1
@@ -66,6 +67,7 @@ def get_x11_libs():
     libX11.XCloseDisplay.restype = ctypes.c_int
     
     libXfixes.XFixesSelectSelectionInput.argtypes = [Display_p, Window, Atom, ctypes.c_ulong]
+    libXfixes.XFixesSelectSelectionInput.restype = None
 
     return libX11, libXfixes
 
@@ -84,10 +86,12 @@ def load_history(path):
             return [x for x in data if isinstance(x, dict)]
     except (json.JSONDecodeError, ValueError, UnicodeDecodeError, OSError):
         pass
+    return []
 
 def validate_and_load(path, limit=100):
     """Loads, filters, sorts, and limits the history specifically for the TUI."""
     data = load_history(path)
+    data.sort(
         key=lambda x: (
             bool(x.get('pinned')), 
             max(x.get('usedAt') or 0, x.get('copiedAt') or 0)
@@ -191,6 +195,7 @@ def copy_to_x11(text, selection='clipboard'):
         process.stdin.close()
     except Exception:
         pass
+
 # =============================================================================
 # TUI COMPONENTS
 # =============================================================================
@@ -204,6 +209,7 @@ class AppState:
         self.copy_item = None
         self.fuzzy_search = False
         self.show_shortcuts = False
+
 def get_filtered_data(query, data, fuzzy=False):
     if not query:
         return [(item, []) for item in data]
@@ -223,6 +229,7 @@ def get_filtered_data(query, data, fuzzy=False):
                 if txt_idx == -1:
                     match = False
                     break
+                indices.append(txt_idx)
                 txt_idx += 1
             if match:
                 result.append((item, indices))
@@ -316,7 +323,9 @@ def draw_ui(stdscr, state, filtered, height, width):
     list_h = height - 3
     
     if state.sel_idx >= len(filtered) and len(filtered) > 0:
+        state.sel_idx = len(filtered) - 1
     elif len(filtered) == 0:
+        state.sel_idx = 0
     
     if state.sel_idx < state.start_idx:
         state.start_idx = state.sel_idx
@@ -331,12 +340,14 @@ def draw_ui(stdscr, state, filtered, height, width):
     for i, (item, match_indices) in enumerate(visible_items):
         y = i + 2
         current_idx = state.start_idx + i
+        is_pinned = bool(item.get('pinned'))
         has_newlines = '\n' in (item.get('text') or '')
         raw = (item.get('text') or '').replace('\n', ' ').strip()
         
         ml_indicator = " ↵ " if has_newlines else ""
         icon = "󰤱" if is_pinned else " "
         
+        ts_ms = max(item.get('usedAt') or 0, item.get('copiedAt') or 0)
         rel_time = get_relative_time(ts_ms)
         time_padding = len(rel_time) + 2 if (rel_time and width > 45) else 0
 
@@ -363,6 +374,7 @@ def draw_ui(stdscr, state, filtered, height, width):
         _, curr_x = stdscr.getyx()
         max_len = width - curr_x - time_padding - len(ml_indicator) - 1
         if max_len < 0: max_len = 0
+        
         display_text = raw[:max_len]
         if len(raw) > max_len and max_len > 3:
             display_text = raw[:max_len-3] + "..."
@@ -457,6 +469,7 @@ def tui_main(stdscr, file_path):
 # =============================================================================
 # DAEMON LOGIC
 # =============================================================================
+
 def daemonize():
     """Double-fork daemonization process to safely detach."""
     try:
@@ -464,6 +477,7 @@ def daemonize():
         if pid > 0:
             sys.exit(0)
     except OSError as e:
+        sys.stderr.write(f"Fork #1 failed: {e}\n")
         sys.exit(1)
 
     os.chdir("/")
@@ -512,6 +526,7 @@ def run_daemon(args):
     if args.selection == "clipboard":
         target_atom = libX11.XInternAtom(disp, b"CLIPBOARD", False_)
     else:
+        target_atom = XA_PRIMARY
 
     libXfixes.XFixesSelectSelectionInput(
         disp, root, target_atom, XFixesSetSelectionOwnerNotifyMask
@@ -585,21 +600,4 @@ def main():
             copy_to_x11(text_to_copy)
 
 if __name__ == "__main__":
-    main()// Random modification at 1787029216.691921
-// Random modification at 1787029216.766229
-// Random modification at 1787029216.789103
-// Random modification at 1787029216.827052
-// Random modification at 1787029216.856697
-// Random modification at 1787029216.908681
-// Random modification at 1787029216.916613
-// Random modification at 1787029216.924742
-// Random modification at 1787029216.970522
-// Random modification at 1787029216.978286
-// Random modification at 1787029217.007868
-// Random modification at 1787029217.01595
-// Random modification at 1787029217.045581
-// Random modification at 1787029217.157003
-// Random modification at 1787029217.356461
-// Random modification at 1787029217.42084
-// Random modification at 1787029217.512297
-// Random modification at 1787029217.532321
+    main()
