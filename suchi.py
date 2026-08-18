@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 suchi - Combined X11 Clipboard Daemon and TUI.
+Dev - Saumyadip Jana, contact: saumyadip.social@gmail.com
 
 Compiling with Nuitka:
     python3 -m nuitka --onefile suchi.py
