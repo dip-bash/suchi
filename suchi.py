@@ -3,9 +3,6 @@
 suchi - Combined X11 Clipboard Daemon and TUI.
 Dev - Saumyadip Jana, contact: saumyadip.social@gmail.com
 
-Compiling with Nuitka:
-    python3 -m nuitka --onefile suchi.py
-
 Usage:
     ./suchi.bin --demon       # Creates a persistent background daemon watching the clipboard
     ./suchi.bin               # Opens the TUI to browse and use clipboard history
@@ -27,9 +24,7 @@ os.environ.setdefault('ESCDELAY', '25')
 DEFAULT_HISTORY_PATH = os.path.expanduser("~/.cache/suchi/history.json")
 DEFAULT_LIMIT = 500
 
-# =============================================================================
 # X11 CTYPES DEFINITIONS (Lazy-loaded to avoid crashing TUI on non-X11 envs)
-# =============================================================================
 
 Display_p = ctypes.c_void_p
 Window = ctypes.c_ulong
@@ -72,9 +67,7 @@ def get_x11_libs():
 
     return libX11, libXfixes
 
-# =============================================================================
 # HISTORY MANAGEMENT
-# =============================================================================
 
 def load_history(path):
     """Loads the full history file."""
@@ -163,9 +156,42 @@ def touch_used(path, text):
     except OSError:
         pass
 
-# =============================================================================
+def delete_clip(path, text):
+    """Removes a single history entry that matches text. Returns True if deleted."""
+    data = load_history(path)
+    new_data = [item for item in data if item.get('text') != text]
+    if len(new_data) == len(data):
+        return False
+    try:
+        tmp_path = path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(new_data, f, ensure_ascii=False)
+        os.replace(tmp_path, path)
+    except OSError:
+        pass
+    return True
+
+def toggle_pin(path, text):
+    """Flips the pinned flag on the entry that matches text. Returns True if found."""
+    data = load_history(path)
+    found = False
+    for item in data:
+        if item.get('text') == text:
+            item['pinned'] = not item.get('pinned', False)
+            found = True
+            break
+    if not found:
+        return False
+    try:
+        tmp_path = path + '.tmp'
+        with open(tmp_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp_path, path)
+    except OSError:
+        pass
+    return True
+
 # XCLIP UTILITIES
-# =============================================================================
 
 def get_clipboard_text(selection):
     """Grabs current selection text via xclip."""
@@ -197,9 +223,7 @@ def copy_to_x11(text, selection='clipboard'):
     except Exception:
         pass
 
-# =============================================================================
 # TUI COMPONENTS
-# =============================================================================
 
 class AppState:
     def __init__(self):
@@ -210,6 +234,10 @@ class AppState:
         self.copy_item = None
         self.fuzzy_search = False
         self.show_shortcuts = False
+        self.mode = "normal"   # "normal" or "insert" (vim-style)
+        self.delete_item = None  # set True by handle_input, resolved in tui_main
+        self.pin_item = None     # set True by handle_input, resolved in tui_main
+        self.flash_msg = ""     # short transient status message (e.g. "Deleted")
 
 def get_filtered_data(query, data, fuzzy=False):
     if not query:
@@ -264,38 +292,62 @@ def safe_addstr(stdscr, y, x, text, attr=0):
 def handle_input(key, stdscr, state, filtered_len):
     list_h = stdscr.getmaxyx()[0] - 3
 
-    if key == 27: # ESC
-        stdscr.nodelay(True)
-        next_key = stdscr.getch()
-        stdscr.timeout(200)
-        if next_key == -1:
-            state.running = False
-        elif next_key == ord('j'):
-            if state.sel_idx < filtered_len - 1:
-                state.sel_idx += 1
-        elif next_key == ord('k'):
-            if state.sel_idx > 0:
-                state.sel_idx -= 1
-        elif next_key == ord('f'):
-            state.fuzzy_search = not state.fuzzy_search
+    # Any keypress clears the previous transient status message.
+    state.flash_msg = ""
+
+    if key == curses.KEY_RESIZE:
+        if hasattr(curses, 'update_lines_cols'):
+            curses.update_lines_cols()
+        return
+
+    # INSERT MODE — typing edits the search query. ESC returns to normal
+    # mode, which is where up/down navigation lives.
+    if state.mode == "insert":
+        if key == 27:  # ESC -> back to normal mode
+            state.mode = "normal"
+        elif key in (curses.KEY_ENTER, 10, 13):
+            if filtered_len > 0:
+                state.copy_item = True
+                state.running = False
+        elif key in (curses.KEY_BACKSPACE, 127, 8):
+            state.query = state.query[:-1]
             state.sel_idx = 0
             state.start_idx = 0
-        elif next_key == ord('h'):
-            state.show_shortcuts = not state.show_shortcuts
-    elif key in (curses.KEY_ENTER, 10, 13):
+        elif 32 <= key <= 126:
+            state.query += chr(key)
+            state.sel_idx = 0
+            state.start_idx = 0
+        return
+
+    # NORMAL MODE — vim-style single-key commands.
+    if key == 27:  # ESC in normal mode exits the app
+        state.running = False
+    elif key == ord('i'):
+        # Jump into insert mode / search, cursor conceptually at the end
+        # of the query, regardless of which entry is currently selected.
+        state.mode = "insert"
+    elif key == ord('j') or key == curses.KEY_DOWN:
+        if state.sel_idx < filtered_len - 1:
+            state.sel_idx += 1
+    elif key == ord('k') or key == curses.KEY_UP:
+        if state.sel_idx > 0:
+            state.sel_idx -= 1
+    elif key == ord('f'):
+        state.fuzzy_search = not state.fuzzy_search
+        state.sel_idx = 0
+        state.start_idx = 0
+    elif key == ord('y') or key in (curses.KEY_ENTER, 10, 13):
         if filtered_len > 0:
             state.copy_item = True
             state.running = False
-    elif key in (curses.KEY_BACKSPACE, 127, 8):
-        state.query = state.query[:-1]
-        state.sel_idx = 0
-        state.start_idx = 0
-    elif key == curses.KEY_DOWN:
-        if state.sel_idx < filtered_len - 1:
-            state.sel_idx += 1
-    elif key == curses.KEY_UP:
-        if state.sel_idx > 0:
-            state.sel_idx -= 1
+    elif key == ord('d'):
+        if filtered_len > 0:
+            state.delete_item = True
+    elif key == ord('p'):
+        if filtered_len > 0:
+            state.pin_item = True
+    elif key == ord('?'):
+        state.show_shortcuts = not state.show_shortcuts
     elif key == curses.KEY_NPAGE:
         if filtered_len > 0:
             state.sel_idx = max(0, min(filtered_len - 1, state.sel_idx + list_h))
@@ -307,13 +359,6 @@ def handle_input(key, stdscr, state, filtered_len):
     elif key == curses.KEY_END:
         if filtered_len > 0:
             state.sel_idx = max(0, filtered_len - 1)
-    elif key == curses.KEY_RESIZE:
-        if hasattr(curses, 'update_lines_cols'):
-            curses.update_lines_cols()
-    elif 32 <= key <= 126:
-        state.query += chr(key)
-        state.sel_idx = 0
-        state.start_idx = 0
 
 def draw_ui(stdscr, state, filtered, height, width):
     if height < 4 or width < 15:
@@ -333,8 +378,20 @@ def draw_ui(stdscr, state, filtered, height, width):
     elif state.sel_idx >= state.start_idx + list_h:
         state.start_idx = state.sel_idx - list_h + 1
 
+    if state.mode == "insert":
+        mode_tag = " INSERT "
+        mode_attr = curses.color_pair(1) | curses.A_BOLD
+    else:
+        mode_tag = " NORMAL "
+        mode_attr = curses.color_pair(3) | curses.A_BOLD | curses.A_REVERSE
+    safe_addstr(stdscr, 0, 0, mode_tag, mode_attr)
+
+    tag_w = len(mode_tag)
     header_text = f" SEARCH: {state.query}"
-    safe_addstr(stdscr, 0, 0, header_text.ljust(width - 1)[:width - 1], curses.color_pair(2) | curses.A_BOLD)
+    if state.flash_msg:
+        header_text = f" {state.flash_msg}"
+    avail = max(0, width - 1 - tag_w)
+    safe_addstr(stdscr, 0, tag_w, header_text.ljust(avail)[:avail], curses.color_pair(2) | curses.A_BOLD)
     safe_addstr(stdscr, 1, 0, ("━" * (width - 1)), curses.color_pair(2) | curses.A_BOLD)
 
     visible_items = filtered[state.start_idx : state.start_idx + list_h]
@@ -411,13 +468,53 @@ def draw_ui(stdscr, state, filtered, height, width):
             safe_addstr(stdscr, y, width - time_padding - 1, rel_time, attr)
 
     fuzzy_status = "ON" if state.fuzzy_search else "OFF"
-    if state.show_shortcuts:
-        footer = f" Alt+f: Fuzzy ({fuzzy_status}) | Alt+j/k: Down/Up | Alt+h: Hide "
+    if state.mode == "insert":
+        footer = " -- INSERT -- | Esc: Normal mode | Enter: Copy "
     else:
-        footer = f" {len(filtered)} items | Fuzzy: {fuzzy_status} | Alt+h: Shortcuts | ENTER: Copy | ESC: Exit "
-    
+        footer = (
+            f" {len(filtered)} items | Fuzzy: {fuzzy_status} | "
+            "i: Search  j/k: Move  y: Copy  d: Delete  p: Pin  ?: Help "
+        )
+
     safe_addstr(stdscr, height - 1, 0, footer.center(width - 1)[:width - 1], curses.A_DIM)
+
+    if state.show_shortcuts:
+        draw_shortcuts_overlay(stdscr, height, width)
+
     stdscr.refresh()
+
+def draw_shortcuts_overlay(stdscr, height, width):
+    """Draws a centered popup listing every vim-style keybinding."""
+    lines = [
+        ("suchi — keybindings", True),
+        ("", False),
+        ("i          enter insert mode (search)", False),
+        ("Esc        insert: back to normal  |  normal: quit", False),
+        ("j / k      move down / up  (normal mode)", False),
+        ("f          toggle fuzzy search  (normal mode)", False),
+        ("y / Enter  copy highlighted entry", False),
+        ("d          delete highlighted entry", False),
+        ("p          pin / unpin highlighted entry", False),
+        ("?          toggle this help", False),
+        ("", False),
+        ("press ? to close", True),
+    ]
+    box_w = min(width - 4, max(len(t) for t, _ in lines) + 6)
+    box_h = min(height - 4, len(lines) + 2)
+    if box_w < 10 or box_h < 3:
+        return
+    start_y = max(0, (height - box_h) // 2)
+    start_x = max(0, (width - box_w) // 2)
+
+    for row in range(box_h):
+        safe_addstr(stdscr, start_y + row, start_x, " " * box_w, curses.color_pair(1))
+
+    for i, (text, emphasize) in enumerate(lines):
+        if i >= box_h - 2:
+            break
+        attr = curses.color_pair(1) | curses.A_BOLD if emphasize else curses.color_pair(1)
+        padded = ("  " + text).ljust(box_w)[:box_w]
+        safe_addstr(stdscr, start_y + 1 + i, start_x, padded, attr)
 
 def tui_main(stdscr, file_path):
     curses.use_default_colors()
@@ -458,18 +555,45 @@ def tui_main(stdscr, file_path):
             needs_redraw = True
             old_query = state.query
             handle_input(key, stdscr, state, len(filtered))
-            
+
             if state.running and state.query != old_query:
                 filtered = get_filtered_data(state.query, data, state.fuzzy_search)
-                
-            if state.copy_item:
+
+            if state.delete_item and filtered:
+                target_text = filtered[state.sel_idx][0].get('text')
+                delete_clip(file_path, target_text)
+                state.delete_item = None
+                state.flash_msg = "Entry deleted"
+                data = validate_and_load(file_path, 100)
+                filtered = get_filtered_data(state.query, data, state.fuzzy_search)
+                if state.sel_idx >= len(filtered):
+                    state.sel_idx = max(0, len(filtered) - 1)
+                try:
+                    last_mtime = os.path.getmtime(file_path)
+                except OSError:
+                    pass
+
+            if state.pin_item and filtered:
+                target_text = filtered[state.sel_idx][0].get('text')
+                toggle_pin(file_path, target_text)
+                state.pin_item = None
+                data = validate_and_load(file_path, 100)
+                filtered = get_filtered_data(state.query, data, state.fuzzy_search)
+                still_here = [i for i, (item, _) in enumerate(filtered) if item.get('text') == target_text]
+                if still_here:
+                    state.sel_idx = still_here[0]
+                    state.flash_msg = "Pinned" if filtered[state.sel_idx][0].get('pinned') else "Unpinned"
+                try:
+                    last_mtime = os.path.getmtime(file_path)
+                except OSError:
+                    pass
+
+            if state.copy_item and filtered:
                 state.copy_item = filtered[state.sel_idx][0]
 
     return state.copy_item
 
-# =============================================================================
 # DAEMON LOGIC
-# =============================================================================
 
 def daemonize():
     """Double-fork daemonization process to safely detach."""
@@ -550,9 +674,7 @@ def run_daemon(args):
     finally:
         libX11.XCloseDisplay(disp)
 
-# =============================================================================
 # MAIN ENTRYPOINT
-# =============================================================================
 
 def main():
     parser = argparse.ArgumentParser(description="suchi - X11 Clipboard Manager & TUI")
