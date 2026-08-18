@@ -7,6 +7,14 @@
 
 A minimalist CLI clipboard manager designed for GNOME/Wayland environments. It currently interfaces with the GNOME Clipboard Indicator extension to provide terminal-based access to your clipboard history.
 
+## Key Features
+
+* **Runs Standalone:** No third-party desktop extensions required. Works out of the box with a built-in background watcher.
+* **Vim-Style Navigation:** Seamless dual-mode interface (Normal / Insert) designed for terminal lovers.
+* **Smart Search:** Easily toggle between exact text search and fuzzy matching.
+* **Pin & Delete Clips:** Keep your most important snippets saved at the top or delete unwanted sensitive data directly from the UI.
+* **Single Binary Distribution:** Built as a self-contained executable for low resource consumption and fast execution.
+
 ## Prerequisites
 
 Before installing, ensure your system meets these requirements:
@@ -37,12 +45,26 @@ Standard execution:
 ```bash
 suchi
 ```
-**TUI Shortcuts:**
-* **`Enter`**: Copy the selected item and exit.
-* **`Esc`**: Exit the UI.
-* **`Alt+f`**: Toggle Fuzzy Searching.
-* **`Alt+j` / `Alt+k**`: Navigate down/up.
-* **`Alt+h`**: Toggle the shortcut help menu.
+
+## Keyboard Shortcuts
+
+The app opens in **Normal Mode** by default.
+
+### Modes
+
+* `i` — Switch to **Insert Mode** to type your search query.
+* `Esc` (in Insert mode) — Return to **Normal Mode**.
+* `Esc` (in Normal mode) — Exit `suchi`.
+
+### Normal Mode Commands
+
+* `j` / `k` or `Down` / `Up` — Move selection down or up.
+* `f` — Toggle fuzzy search ON/OFF.
+* `y` or `Enter` — Copy highlighted entry to clipboard and exit.
+* `d` — Delete highlighted entry permanently.
+* `p` — Pin or unpin highlighted entry.
+* `?` — Toggle keybinding help overlay popup.
+* `Page Up` / `Page Down` — Scroll quickly through list pages.
 
 ### Background Daemon
 
@@ -68,18 +90,19 @@ kitty -o initial_window_width=80c -o initial_window_height=20c -o remember_windo
 gnome-terminal --geometry=80x20 -- suchi
 ```
 
-## Future Roadmap
+## Upcoming Features & Roadmap
 
-*   Add ability to delete specific entries directly from the CLI.
-*   Implement pinning functionality for important snippets or other tab for snippets.
-*   Add commands shortcuts
+The project is under active development. Here is what is coming next:
+
+### 1. Tabbed Interface (`Tab` Key Navigation)
+
+Cycle seamlessly between three dedicated workspaces using the `Tab` key:
+
+* **Tab 1: Clipboard History** — The default clipboard manager with history search, pinning, and deletion.
+* **Tab 2: Short Notes** — A minimal scratchpad UI to quickly draft and save plain text notes on the fly using Vim-style editing.
+* **Tab 3: Text Expander** — Store short system-wide text triggers (e.g., typing `:mail` automatically expands into your full email address or long commands).
 *   URL checker
-*   Text extender-> type :mail in any place gives full email address
 
-## Contributing
-
-* Adding an interactive keybind (e.g., `Ctrl+p`) in the TUI for pinning and unpinning items.
-* Adding a keybind (e.g., `Delete` or `d`) for removing specific items.
 
 ---
 
