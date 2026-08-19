@@ -2,41 +2,41 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Suchi | Terminal Clipboard Manager</title>
-    
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Suchi | Terminal Workspace Suite</title>
+
     <!-- SEO Meta Tags -->
-    <meta name="description" content="Suchi is a lightning-fast, lightweight terminal clipboard manager built in Python. Fuzzy search your clipboard history directly from the CLI.">
-    <meta name="keywords" content="clipboard manager, terminal, CLI, linux tool, fuzzy search, developer productivity, python">
+    <meta name="description" content="Suchi is a standalone multi-tab terminal workspace suite for Linux. Manage clipboard history, scratchpad notes, and text expanders with Vim-style modal navigation.">
+    <meta name="keywords" content="clipboard manager, text expander, vim tui, linux tool, terminal scratchpad, fuzzy search, developer productivity, python">
     <meta name="author" content="dip-bash">
     <meta name="theme-color" content="#09090b">
-    
+
     <link rel="canonical" href="https://dip-bash.github.io/suchi">
-    
-    <!-- Temporary minimalist Favicon (a sushi emoji to match the name "suchi") -->
+
+    <!-- Minimalist Favicon -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗒️</text></svg>">
-    
+
     <!-- Open Graph / Social Media -->
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://dip-bash.github.io/suchi">
-    <meta property="og:title" content="Suchi | Terminal Clipboard Manager">
-    <meta property="og:description" content="Suchi is a lightning-fast, lightweight terminal clipboard manager built in Python. Fuzzy search your clipboard history directly from the CLI.">
-    
+    <meta property="og:title" content="Suchi | Terminal Workspace Suite">
+    <meta property="og:description" content="Standalone Linux clipboard manager, quick scratchpad notes, and text expansion powered by Vim keybindings.">
+
     <!-- Twitter Cards -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:url" content="https://dip-bash.github.io/suchi">
-    <meta name="twitter:title" content="Suchi | Terminal Clipboard Manager">
-    <meta name="twitter:description" content="Suchi is a lightning-fast, lightweight terminal clipboard manager built in Python. Fuzzy search your clipboard history directly from the CLI.">
-    
-    <!-- Schema.org JSON-LD for Rich Search Results -->
+    <meta name="twitter:title" content="Suchi | Terminal Workspace Suite">
+    <meta name="twitter:description" content="Standalone Linux clipboard manager, quick scratchpad notes, and text expansion powered by Vim keybindings.">
+
+    <!-- Schema.org JSON-LD -->
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "SoftwareApplication",
       "name": "Suchi",
-      "operatingSystem": "Linux, macOS",
+      "operatingSystem": "Linux",
       "applicationCategory": "DeveloperApplication",
-      "description": "A lightning-fast, lightweight terminal clipboard manager built in Python with fuzzy search capabilities.",
+      "description": "A standalone terminal clipboard manager, scratchpad, and text expander built with Vim-style navigation.",
       "offers": {
         "@type": "Offer",
         "price": "0",
@@ -55,12 +55,12 @@
 <body>
     <nav class="top-nav">
         <a href="https://github.com/dip-bash/suchi" target="_blank" rel="noopener noreferrer" class="github-btn">
-            <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor">
+            <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" aria-hidden="true">
                 <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
             </svg>
             <span>Star on GitHub</span>
             <span class="star-count-badge">
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="margin-right: 4px; color: #eab308;">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="margin-right: 4px; color: #eab308;" aria-hidden="true">
                     <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"></path>
                 </svg>
                 <span id="github-stars">...</span>
@@ -71,36 +71,36 @@
         <div class="split-layout">
             <div class="left-content">
                 <header class="hero">
-                    <h1>Suchi</h1>
-                    <p class="subtitle">The Terminal Clipboard Manager</p>
-                    <p class="description">Fuzzy search your clipboard history at the speed of thought.</p>
+                    <h1>suchi</h1>
+                    <p class="subtitle">Multi-Tab Terminal Workspace</p>
+                    <p class="description">A standalone Linux suite featuring clipboard history, a scratchpad for notes, and a system-wide text expander with Vim-style navigation.</p>
 
                     <div class="commands-section">
-                        <div class="command-tabs">
-                            <button class="cmd-tab active" data-cmd="curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/install.sh | bash">Install</button>
-                            <button class="cmd-tab" data-cmd="curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/uninstall.sh | bash">Uninstall</button>
-                            <button class="cmd-tab" data-cmd="gnome-terminal --geometry=80x20 -- suchi">GNOME Terminal</button>
-                            <button class="cmd-tab" data-cmd="kitty -o initial_window_width=80c -o initial_window_height=20c -o remember_window_size=no -- suchi">Kitty Terminal</button>
+                        <div class="command-tabs" role="tablist" aria-label="Install commands">
+                            <button class="cmd-tab active" role="tab" aria-selected="true" data-cmd="curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/install.sh | bash">Install</button>
+                            <button class="cmd-tab" role="tab" aria-selected="false" data-cmd="curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/uninstall.sh | bash">Uninstall</button>
+                            <button class="cmd-tab" role="tab" aria-selected="false" data-cmd="suchi">Launch TUI</button>
+                            <button class="cmd-tab" role="tab" aria-selected="false" data-cmd="systemctl --user status suchi-daemon.service">Check Daemon</button>
                         </div>
                         <div class="cta-container">
                             <code id="install-command">curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/install.sh | bash</code>
-                            <button id="copy-btn" class="btn">Copy</button>
+                            <button id="copy-btn" class="btn" type="button">Copy</button>
                         </div>
                     </div>
                 </header>
 
                 <section class="features">
                     <div class="feature-item">
-                        <h3>Terminal Native</h3>
-                        <p>Keep your hands on the keyboard. Manage your clipboard history entirely from the command line.</p>
+                        <h3>3-Tab Workspace</h3>
+                        <p>Use the <kbd>Tab</kbd> key to instantly switch between your Clipboard History, Short Notes scratchpad, and system-wide Text Expanders.</p>
                     </div>
                     <div class="feature-item">
-                        <h3>Fuzzy Search</h3>
-                        <p>Find that one link or command you copied 3 hours ago instantly with lightning-fast fuzzy matching.</p>
+                        <h3>Vim Modal Interface</h3>
+                        <p>Dedicated Normal and Insert modes. Navigate with <kbd>j</kbd>/<kbd>k</kbd>, search, pin <kbd>p</kbd>, or delete <kbd>d</kbd> items instantly, and access a built-in help overlay with <kbd>?</kbd>.</p>
                     </div>
                     <div class="feature-item">
-                        <h3>Lightweight</h3>
-                        <p>Built in Python. Minimal dependencies, fast execution, and a low resource footprint.</p>
+                        <h3>Standalone Linux App</h3>
+                        <p>Zero desktop extension dependencies. Perfect for Debian 12 and other modern distributions, it ships as a highly optimized, self-contained Nuitka-compiled binary.</p>
                     </div>
                 </section>
             </div>
@@ -108,7 +108,6 @@
             <div class="right-content">
                 <section class="demo-section">
                     <div class="terminal-wrapper">
-                        <div class="terminal-glow"></div>
                         <div class="terminal-window" id="demo-terminal" tabindex="0">
                             <div class="terminal-header">
                                 <div class="window-controls">
@@ -116,17 +115,64 @@
                                     <span class="control minimize"></span>
                                     <span class="control maximize"></span>
                                 </div>
-                                <div class="window-title">suchi — bash</div>
+                                <div class="window-title">suchi</div>
                             </div>
+
+                            <!-- Tab Bar -->
+                            <div class="terminal-tabs" role="tablist" aria-label="Workspace tabs">
+                                <div class="term-tab active" id="tab-0" role="tab" aria-selected="true">Clipboard</div>
+                                <div class="term-tab" id="tab-1" role="tab" aria-selected="false">Notes</div>
+                                <div class="term-tab" id="tab-2" role="tab" aria-selected="false">Expander</div>
+                            </div>
+
                             <div class="terminal-search-bar">
-                                <span class="search-label">SEARCH:</span>
-                                <input type="text" id="demo-search" autocomplete="off" spellcheck="false">
+                                <span id="mode-badge" class="mode-badge normal-mode">NORMAL</span>
+                                <span class="search-label">/</span>
+                                <input type="text" id="demo-search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type to search..." readonly aria-label="Search items">
                             </div>
-                            <ul class="terminal-list" id="demo-list">
-                                <!-- Populated by JS -->
-                            </ul>
+
+                            <div class="terminal-body-wrapper">
+                                <ul class="terminal-list" id="demo-list">
+                                    <!-- Populated by JS -->
+                                </ul>
+
+                                <!-- Help Overlay -->
+                                <div id="help-overlay" class="help-overlay hidden">
+                                    <div class="help-content">
+                                        <h4>Suchi Keybindings</h4>
+                                        <ul>
+                                            <li><kbd>Tab</kbd> : Cycle workspaces</li>
+                                            <li><kbd>i</kbd> : Enter INSERT mode</li>
+                                            <li><kbd>Esc</kbd> : Enter NORMAL mode</li>
+                                            <li><kbd>j</kbd> / <kbd>k</kbd> : Navigate list</li>
+                                            <li><kbd>p</kbd> : Pin / Unpin item</li>
+                                            <li><kbd>d</kbd> : Delete item</li>
+                                            <li><kbd>y</kbd> / <kbd>Enter</kbd> : Copy item</li>
+                                            <li><kbd>?</kbd> : Toggle this help</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Touch action bar: mirrors the keyboard shortcuts for mobile/tablet users -->
+                            <div class="terminal-actions" id="terminal-actions" role="toolbar" aria-label="Item actions">
+                                <button type="button" class="action-btn" id="action-copy" aria-label="Copy selected item">
+                                    <span aria-hidden="true">⏎</span><span class="action-label">Copy</span>
+                                </button>
+                                <button type="button" class="action-btn" id="action-pin" aria-label="Pin or unpin selected item">
+                                    <span aria-hidden="true">📌</span><span class="action-label">Pin</span>
+                                </button>
+                                <button type="button" class="action-btn" id="action-delete" aria-label="Delete selected item">
+                                    <span aria-hidden="true">🗑</span><span class="action-label">Delete</span>
+                                </button>
+                                <button type="button" class="action-btn" id="action-help" aria-label="Toggle keybindings help">
+                                    <span aria-hidden="true">?</span><span class="action-label">Help</span>
+                                </button>
+                            </div>
+
                             <div class="terminal-footer">
-                                <span id="demo-count">10 items</span> | &uarr;&darr;: Navigate | ENTER: Copy | ESC: Exit
+                                <span id="demo-count">0 items</span>
+                                <span class="footer-hint">Tab: Switch &middot; j/k: Nav &middot; p: Pin &middot; d: Del &middot; ?: Help</span>
                             </div>
                         </div>
                     </div>
@@ -134,7 +180,7 @@
             </div>
         </div>
     </main>
-    
+
     <script src="script.js"></script>
 </body>
 </html>
