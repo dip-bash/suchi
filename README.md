@@ -90,6 +90,11 @@ kitty -o initial_window_width=80c -o initial_window_height=20c -o remember_windo
 gnome-terminal --geometry=80x20 -- suchi
 ```
 
+**For Foot:**
+```bash
+footclient -W 80x20 suchi; or foot -W 80x20 suchi
+```
+
 ## Upcoming Features & Roadmap
 
 The project is under active development. Here is what is coming next:
