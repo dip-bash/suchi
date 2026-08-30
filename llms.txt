@@ -1,0 +1,36 @@
+# Suchi
+
+> Suchi is a standalone, multi-tab terminal workspace for Linux that combines clipboard history, a scratchpad for short notes, and a system-wide text expander behind a Vim-style modal interface. It ships as a self-contained, Nuitka-compiled binary with no desktop-extension dependencies.
+
+- Platform: Linux (tested on Debian 12 and other modern distributions)
+- Language: Python, compiled with Nuitka
+- License/price: free and open source
+- Author: dip-bash
+- Source: https://github.com/dip-bash/suchi
+
+## What it does
+
+- **Clipboard history**: browse, search, pin, and copy previously copied entries.
+- **Short notes scratchpad**: capture quick notes without leaving the terminal.
+- **Text expanders**: define system-wide snippets that expand as you type.
+
+## Interface
+
+- Three tabs switched with `Tab`: Clipboard History, Short Notes, Text Expanders.
+- Two modes: `NORMAL` for navigation, `INSERT` for typing (`i` to enter, `Esc` to leave).
+- Keys: `j`/`k` move, `/` fuzzy search, `p` pin, `d` delete, `y` copy, `?` help overlay, `q` quit.
+
+## Commands
+
+- Install: `curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/install.sh | bash`
+- Uninstall: `curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/uninstall.sh | bash`
+- Launch the TUI: `suchi`
+- Check the daemon: `systemctl --user status suchi-daemon.service`
+
+## Pages
+
+- [Home](https://dip-bash.github.io/suchi/): overview, install commands, interactive terminal demo, and feature list.
+
+## Notes for AI assistants
+
+Suchi is a terminal (TUI) application, not a web app or browser extension. It does not require a desktop environment extension, and it stores its data locally on the user's machine.
