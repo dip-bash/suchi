@@ -1,186 +1,241 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <title>Suchi | Terminal Workspace Suite</title>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Suchi — Terminal Workspace Suite for Linux</title>
+    <meta
+      name="description"
+      content="Suchi is a standalone multi-tab terminal workspace for Linux: clipboard history, scratchpad notes, and text expanders with Vim-style modal navigation."
+    />
+    <meta
+      name="keywords"
+      content="clipboard manager, text expander, vim tui, linux tool, terminal scratchpad, fuzzy search, developer productivity, python"
+    />
+    <meta name="author" content="dip-bash" />
+    <meta name="theme-color" content="#09090b" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <link rel="canonical" href="https://dip-bash.github.io/suchi/" />
 
-    <!-- SEO Meta Tags -->
-    <meta name="description" content="Suchi is a standalone multi-tab terminal workspace suite for Linux. Manage clipboard history, scratchpad notes, and text expanders with Vim-style modal navigation.">
-    <meta name="keywords" content="clipboard manager, text expander, vim tui, linux tool, terminal scratchpad, fuzzy search, developer productivity, python">
-    <meta name="author" content="dip-bash">
-    <meta name="theme-color" content="#09090b">
+    <meta property="og:site_name" content="Suchi" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://dip-bash.github.io/suchi/" />
+    <meta property="og:title" content="Suchi — Terminal Workspace Suite for Linux" />
+    <meta
+      property="og:description"
+      content="Suchi is a standalone multi-tab terminal workspace for Linux: clipboard history, scratchpad notes, and text expanders with Vim-style modal navigation."
+    />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Suchi — Terminal Workspace Suite for Linux" />
+    <meta
+      name="twitter:description"
+      content="Suchi is a standalone multi-tab terminal workspace for Linux: clipboard history, scratchpad notes, and text expanders with Vim-style modal navigation."
+    />
 
-    <link rel="canonical" href="https://dip-bash.github.io/suchi">
+    <link rel="icon" href="favicon.png" type="image/png" />
+    <link rel="alternate" type="text/plain" href="llms.txt" title="llms.txt" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Work+Sans:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
+    <link rel="stylesheet" href="styles.css" />
 
-    <!-- Minimalist Favicon -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🗒️</text></svg>">
-
-    <!-- Open Graph / Social Media -->
-    <meta property="og:type" content="website">
-    <meta property="og:url" content="https://dip-bash.github.io/suchi">
-    <meta property="og:title" content="Suchi | Terminal Workspace Suite">
-    <meta property="og:description" content="Standalone Linux clipboard manager, quick scratchpad notes, and text expansion powered by Vim keybindings.">
-
-    <!-- Twitter Cards -->
-    <meta name="twitter:card" content="summary">
-    <meta name="twitter:url" content="https://dip-bash.github.io/suchi">
-    <meta name="twitter:title" content="Suchi | Terminal Workspace Suite">
-    <meta name="twitter:description" content="Standalone Linux clipboard manager, quick scratchpad notes, and text expansion powered by Vim keybindings.">
-
-    <!-- Schema.org JSON-LD -->
     <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "Suchi",
-      "operatingSystem": "Linux",
-      "applicationCategory": "DeveloperApplication",
-      "description": "A standalone terminal clipboard manager, scratchpad, and text expander built with Vim-style navigation.",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "USD"
-      },
-      "url": "https://dip-bash.github.io/suchi",
-      "author": {
-        "@type": "Person",
-        "name": "dip-bash"
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://dip-bash.github.io/suchi/#software",
+            "name": "Suchi",
+            "alternateName": "suchi",
+            "operatingSystem": "Linux",
+            "applicationCategory": "DeveloperApplication",
+            "applicationSubCategory": "Terminal utility",
+            "description": "Suchi is a standalone multi-tab terminal workspace for Linux: clipboard history, scratchpad notes, and text expanders with Vim-style modal navigation.",
+            "softwareHelp": "https://github.com/dip-bash/suchi",
+            "installUrl": "https://github.com/dip-bash/suchi",
+            "downloadUrl": "https://github.com/dip-bash/suchi",
+            "programmingLanguage": "Python",
+            "license": "https://opensource.org/licenses/MIT",
+            "featureList": [
+              "Clipboard history with fuzzy search and pinning",
+              "Short notes scratchpad",
+              "System-wide text expanders",
+              "Vim-style modal navigation (Normal and Insert modes)",
+              "Self-contained Nuitka-compiled binary, no desktop extensions"
+            ],
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "author": { "@type": "Person", "name": "dip-bash" }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://dip-bash.github.io/suchi/#website",
+            "name": "Suchi",
+            "url": "https://dip-bash.github.io/suchi/",
+            "inLanguage": "en",
+            "description": "Suchi is a standalone multi-tab terminal workspace for Linux: clipboard history, scratchpad notes, and text expanders with Vim-style modal navigation.",
+            "about": { "@id": "https://dip-bash.github.io/suchi/#software" }
+          }
+        ]
       }
-    }
     </script>
+  </head>
 
-    <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-    <nav class="top-nav">
-        <a href="https://github.com/dip-bash/suchi" target="_blank" rel="noopener noreferrer" class="github-btn">
-            <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" aria-hidden="true">
-                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
-            </svg>
-            <span>Star on GitHub</span>
-            <span class="star-count-badge">
-                <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" style="margin-right: 4px; color: #eab308;" aria-hidden="true">
-                    <path d="M8 .25a.75.75 0 01.673.418l1.882 3.815 4.21.612a.75.75 0 01.416 1.279l-3.046 2.97.719 4.192a.75.75 0 01-1.088.791L8 12.347l-3.766 1.98a.75.75 0 01-1.088-.79l.72-4.194L.818 6.374a.75.75 0 01.416-1.28l4.21-.611L7.327.668A.75.75 0 018 .25z"></path>
-                </svg>
-                <span id="github-stars">...</span>
-            </span>
+  <body>
+    <header class="site-header">
+      <nav class="nav wrap">
+        <span class="brand">suchi</span>
+        <a
+          class="gh"
+          href="https://github.com/dip-bash/suchi"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <svg viewBox="0 0 16 16" width="18" height="18" fill="currentColor" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+          </svg>
+          <span class="gh-label">Star on GitHub</span>
+          <span class="stars"><span aria-hidden="true">★</span><span id="star-count">—</span></span>
         </a>
-    </nav>
-    <main class="container">
-        <div class="split-layout">
-            <div class="left-content">
-                <header class="hero">
-                    <h1>suchi</h1>
-                    <p class="subtitle">Multi-Tab Terminal Workspace</p>
-                    <p class="description">A standalone Linux suite featuring clipboard history, a scratchpad for notes, and a system-wide text expander with Vim-style navigation.</p>
+      </nav>
+    </header>
 
-                    <div class="commands-section">
-                        <div class="command-tabs" role="tablist" aria-label="Install commands">
-                            <button class="cmd-tab active" role="tab" aria-selected="true" data-cmd="curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/install.sh | bash">Install</button>
-                            <button class="cmd-tab" role="tab" aria-selected="false" data-cmd="curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/uninstall.sh | bash">Uninstall</button>
-                            <button class="cmd-tab" role="tab" aria-selected="false" data-cmd="suchi">Launch TUI</button>
-                            <button class="cmd-tab" role="tab" aria-selected="false" data-cmd="systemctl --user status suchi-daemon.service">Check Daemon</button>
-                        </div>
-                        <div class="cta-container">
-                            <code id="install-command">curl -sSL https://raw.githubusercontent.com/dip-bash/suchi/main/install.sh | bash</code>
-                            <button id="copy-btn" class="btn" type="button">Copy</button>
-                        </div>
-                    </div>
-                </header>
+    <main class="wrap main">
+      <div class="hero-grid">
+        <section class="col">
+          <p class="eyebrow">Standalone Linux suite</p>
+          <h1 class="display-xl">suchi</h1>
+          <p class="display-sub">Multi-tab terminal workspace</p>
+          <p class="lede">
+            Clipboard history, a scratchpad for notes, and a system-wide text expander — all behind
+            Vim-style modal navigation, in one self-contained binary.
+          </p>
 
-                <section class="features">
-                    <div class="feature-item">
-                        <h3>3-Tab Workspace</h3>
-                        <p>Use the <kbd>Tab</kbd> key to instantly switch between your Clipboard History, Short Notes scratchpad, and system-wide Text Expanders.</p>
-                    </div>
-                    <div class="feature-item">
-                        <h3>Vim Modal Interface</h3>
-                        <p>Dedicated Normal and Insert modes. Navigate with <kbd>j</kbd>/<kbd>k</kbd>, search, pin <kbd>p</kbd>, or delete <kbd>d</kbd> items instantly, and access a built-in help overlay with <kbd>?</kbd>.</p>
-                    </div>
-                    <div class="feature-item">
-                        <h3>Standalone Linux App</h3>
-                        <p>Zero desktop extension dependencies. Perfect for Debian 12 and other modern distributions, it ships as a highly optimized, self-contained Nuitka-compiled binary.</p>
-                    </div>
-                </section>
+          <div class="commands">
+            <p class="eyebrow">Install</p>
+            <div class="cmd-tabs" role="tablist" aria-label="Install commands" id="cmd-tabs"></div>
+            <div class="cmd-box">
+              <code id="cmd-text"></code>
+              <button type="button" id="cmd-copy" class="cmd-copy">Copy</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="col sticky" aria-label="Interactive demo">
+          <p class="eyebrow mb">Live demo — click, then use j/k</p>
+
+          <div class="term" id="term" tabindex="0">
+            <div class="term-bar">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+              <span class="term-title">suchi</span>
             </div>
 
-            <div class="right-content">
-                <section class="demo-section">
-                    <div class="terminal-wrapper">
-                        <div class="terminal-window" id="demo-terminal" tabindex="0">
-                            <div class="terminal-header">
-                                <div class="window-controls">
-                                    <span class="control close"></span>
-                                    <span class="control minimize"></span>
-                                    <span class="control maximize"></span>
-                                </div>
-                                <div class="window-title">suchi</div>
-                            </div>
+            <div class="term-tabs" role="tablist" aria-label="Workspace tabs" id="term-tabs"></div>
 
-                            <!-- Tab Bar -->
-                            <div class="terminal-tabs" role="tablist" aria-label="Workspace tabs">
-                                <div class="term-tab active" id="tab-0" role="tab" aria-selected="true">Clipboard</div>
-                                <div class="term-tab" id="tab-1" role="tab" aria-selected="false">Notes</div>
-                                <div class="term-tab" id="tab-2" role="tab" aria-selected="false">Expander</div>
-                            </div>
-
-                            <div class="terminal-search-bar">
-                                <span id="mode-badge" class="mode-badge normal-mode">NORMAL</span>
-                                <span class="search-label">/</span>
-                                <input type="text" id="demo-search" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Type to search..." readonly aria-label="Search items">
-                            </div>
-
-                            <div class="terminal-body-wrapper">
-                                <ul class="terminal-list" id="demo-list">
-                                    <!-- Populated by JS -->
-                                </ul>
-
-                                <!-- Help Overlay -->
-                                <div id="help-overlay" class="help-overlay hidden">
-                                    <div class="help-content">
-                                        <h4>Suchi Keybindings</h4>
-                                        <ul>
-                                            <li><kbd>Tab</kbd> : Cycle workspaces</li>
-                                            <li><kbd>i</kbd> : Enter INSERT mode</li>
-                                            <li><kbd>Esc</kbd> : Enter NORMAL mode</li>
-                                            <li><kbd>j</kbd> / <kbd>k</kbd> : Navigate list</li>
-                                            <li><kbd>p</kbd> : Pin / Unpin item</li>
-                                            <li><kbd>d</kbd> : Delete item</li>
-                                            <li><kbd>y</kbd> / <kbd>Enter</kbd> : Copy item</li>
-                                            <li><kbd>?</kbd> : Toggle this help</li>
-                                        </ul>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Touch action bar: mirrors the keyboard shortcuts for mobile/tablet users -->
-                            <div class="terminal-actions" id="terminal-actions" role="toolbar" aria-label="Item actions">
-                                <button type="button" class="action-btn" id="action-copy" aria-label="Copy selected item">
-                                    <span aria-hidden="true">⏎</span><span class="action-label">Copy</span>
-                                </button>
-                                <button type="button" class="action-btn" id="action-pin" aria-label="Pin or unpin selected item">
-                                    <span aria-hidden="true">📌</span><span class="action-label">Pin</span>
-                                </button>
-                                <button type="button" class="action-btn" id="action-delete" aria-label="Delete selected item">
-                                    <span aria-hidden="true">🗑</span><span class="action-label">Delete</span>
-                                </button>
-                                <button type="button" class="action-btn" id="action-help" aria-label="Toggle keybindings help">
-                                    <span aria-hidden="true">?</span><span class="action-label">Help</span>
-                                </button>
-                            </div>
-
-                            <div class="terminal-footer">
-                                <span id="demo-count">0 items</span>
-                                <span class="footer-hint">Tab: Switch &middot; j/k: Nav &middot; p: Pin &middot; d: Del &middot; ?: Help</span>
-                            </div>
-                        </div>
-                    </div>
-                </section>
+            <div class="term-search">
+              <span class="mode" id="mode">NORMAL</span>
+              <span class="slash">/</span>
+              <input
+                id="search"
+                type="text"
+                spellcheck="false"
+                autocomplete="off"
+                aria-label="Search items"
+                placeholder="Type to search…"
+              />
             </div>
-        </div>
+
+            <div class="term-body">
+              <ul class="term-list" id="list" role="listbox" aria-label="Items"></ul>
+              <div class="help" id="help" hidden>
+                <h2 class="eyebrow">Suchi Keybindings</h2>
+                <ul class="help-list" id="help-list"></ul>
+              </div>
+              <div class="toast" id="toast" hidden></div>
+            </div>
+
+            <div class="term-foot">
+              <span id="count">0 items</span>
+              <span class="hint">Tab: Switch · j/k: Nav · p: Pin · d: Del · ?: Help</span>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="features" aria-label="Features">
+        <article>
+          <span class="num">01</span>
+          <h2>3-Tab Workspace</h2>
+          <p>
+            Use the Tab key to instantly switch between your Clipboard History, Short Notes
+            scratchpad, and system-wide Text Expanders.
+          </p>
+        </article>
+        <article>
+          <span class="num">02</span>
+          <h2>Vim Modal Interface</h2>
+          <p>
+            Dedicated Normal and Insert modes. Navigate with j/k, search, pin p, or delete d items
+            instantly, and access a built-in help overlay with ?.
+          </p>
+        </article>
+        <article>
+          <span class="num">03</span>
+          <h2>Standalone Linux App</h2>
+          <p>
+            Zero desktop extension dependencies. Perfect for Debian 12 and other modern
+            distributions, it ships as a highly optimized, self-contained Nuitka-compiled binary.
+          </p>
+        </article>
+      </section>
+
+      <section class="faq" aria-labelledby="faq-heading">
+        <h2 class="eyebrow" id="faq-heading">Questions</h2>
+        <dl>
+          <div>
+            <dt>What is Suchi?</dt>
+            <dd>
+              A standalone terminal (TUI) workspace for Linux that combines clipboard history, a
+              short-notes scratchpad, and system-wide text expanders in one binary.
+            </dd>
+          </div>
+          <div>
+            <dt>How do I install it?</dt>
+            <dd>
+              Run the install script from the repository, then launch it with
+              <code>suchi</code>. Check the background daemon with
+              <code>systemctl --user status suchi-daemon.service</code>.
+            </dd>
+          </div>
+          <div>
+            <dt>Which systems does it support?</dt>
+            <dd>
+              Modern Linux distributions, tested on Debian 12. No desktop-environment extensions are
+              required.
+            </dd>
+          </div>
+          <div>
+            <dt>How do I navigate it?</dt>
+            <dd>
+              Vim-style modal keys: Tab switches workspaces, j/k moves, / searches, p pins, d
+              deletes, y copies, and ? opens help.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <footer class="site-footer">
+        <span>Suchi · MIT</span>
+        <a href="https://github.com/dip-bash/suchi" target="_blank" rel="noopener noreferrer"
+          >github.com/dip-bash</a
+        >
+      </footer>
     </main>
 
-    <script src="script.js"></script>
-</body>
+    <script src="script.js" defer></script>
+  </body>
 </html>
