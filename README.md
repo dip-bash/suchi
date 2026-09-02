@@ -5,8 +5,7 @@
 
 # suchi
 
-A minimalist CLI clipboard manager designed for GNOME/Wayland environments. It currently interfaces with the GNOME Clipboard Indicator extension to provide terminal-based access to your clipboard history.
-
+A minimalist CLI clipboard manager designed for Linux environments. 
 ## Key Features
 
 * **Runs Standalone:** No third-party desktop extensions required. Works out of the box with a built-in background watcher.
