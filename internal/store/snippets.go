@@ -163,3 +163,43 @@ func (s *Store) ImportLegacyJSON(ctx context.Context, path string, limit, maxByt
 	// Apply the history limit once, after the import.
 	return imported, prune(ctx, s.db, limit)
 }
+
+// GetSnippet reads one snippet.
+func (s *Store) GetSnippet(ctx context.Context, id int64) (Snippet, error) {
+	got, err := s.querySnippets(ctx, `WHERE id = ?`, id)
+	if err != nil {
+		return Snippet{}, err
+	}
+	if len(got) == 0 {
+		return Snippet{}, fmt.Errorf("snippet %d no longer exists", id)
+	}
+	return got[0], nil
+}
+
+// RestoreSnippet puts a deleted snippet back with its original id (when
+// still free) and timestamps, and returns the id it now has.
+func (s *Store) RestoreSnippet(ctx context.Context, sn Snippet) (int64, error) {
+	if err := sn.normalise(); err != nil {
+		return 0, err
+	}
+	var id any = sn.ID
+	var taken int
+	_ = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM snippets WHERE id = ?`, sn.ID).Scan(&taken)
+	if taken > 0 {
+		id = nil
+	}
+	created, updated := sn.CreatedAt.UnixMilli(), sn.UpdatedAt.UnixMilli()
+	if sn.CreatedAt.IsZero() {
+		created = nowMS()
+	}
+	if sn.UpdatedAt.IsZero() {
+		updated = created
+	}
+	res, err := s.db.ExecContext(ctx,
+		`INSERT INTO snippets (id, name, body, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		id, sn.Name, sn.Body, sn.Kind, created, updated)
+	if err != nil {
+		return 0, fmt.Errorf("restore snippet: %w", err)
+	}
+	return res.LastInsertId()
+}

@@ -404,8 +404,9 @@ func TestDeleteAndPinClips(t *testing.T) {
 		t.Fatal("pinned entry must sort first")
 	}
 	press(m, "d")
+	press(m, "d")
 	if len(m.rows[tabClips]) != 1 {
-		t.Fatalf("d deletes a clip at once, rows=%d", len(m.rows[tabClips]))
+		t.Fatalf("d d deletes a clip, rows=%d", len(m.rows[tabClips]))
 	}
 }
 
@@ -777,32 +778,27 @@ func TestWheelMovesTheSelection(t *testing.T) {
 
 // --- animation ---------------------------------------------------------------------------
 
-func TestTabPillSlidesWithASpring(t *testing.T) {
+func TestTabSwitchIsInstant(t *testing.T) {
 	m := newTestModel(t, "x")
 	press(m, "tab")
-	if !m.animating() || m.pill.target != 7 {
-		t.Fatal("switching tabs must start the pill animation")
+	if m.pill.pos != 7 || m.animating() {
+		t.Fatalf("switching tabs must not animate (pos=%v animating=%v)", m.pill.pos, m.animating())
 	}
-	steps := 0
-	sawMiddle := false
-	for m.animating() && steps < 600 {
-		m.pill.step()
-		if m.pill.pos > 0.5 && m.pill.pos < 6.5 {
-			sawMiddle = true
-		}
-		steps++
+	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab}); cmd != nil && m.frameRunning {
+		t.Fatal("a tab switch must not start the frame loop")
 	}
-	if !sawMiddle || m.pill.pos != 7 || steps < 5 {
-		t.Fatalf("the pill must glide (middle=%v steps=%d pos=%v)", sawMiddle, steps, m.pill.pos)
+	if m.pill.pos != 0 {
+		t.Fatalf("back to Clip at once, pos=%v", m.pill.pos)
 	}
-	if steps > 90 {
-		t.Fatalf("the glide must feel quick, took %d frames", steps)
+	m.click(zTabSnip, false)
+	if m.pill.pos != 7 || m.animating() {
+		t.Fatal("clicking a tab is instant too")
 	}
 }
 
 func TestFrameLoopStopsWhenSettled(t *testing.T) {
-	m := newTestModel(t, "x")
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m := newTestModel(t, strings.Repeat("a line\n", 20))
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}) // the popup unfolds with a spring
 	if cmd == nil || !m.frameRunning {
 		t.Fatal("an animation needs the frame loop")
 	}
@@ -902,5 +898,212 @@ func TestEveryViewFitsTheTerminal(t *testing.T) {
 			press(m, "esc")
 			m.setTab(tabClips)
 		}
+	}
+}
+
+// --- delete needs two presses, u undoes -------------------------------------------------
+
+func rowTexts(m *model) []string {
+	var out []string
+	for _, r := range m.rows[tabClips] {
+		out = append(out, string(m.clips[r.idx].disp))
+	}
+	return out
+}
+
+func TestEveryDeleteNeedsTwoPresses(t *testing.T) {
+	m := newTestModel(t, "one", "two")
+	press(m, "d")
+	if len(m.rows[tabClips]) != 2 || !strings.Contains(m.flash, "press d again") || !strings.Contains(m.flash, "two") {
+		t.Fatalf("a single d must only ask (flash=%q rows=%d)", m.flash, len(m.rows[tabClips]))
+	}
+	press(m, "j") // anything else disarms
+	press(m, "d")
+	if len(m.rows[tabClips]) != 2 {
+		t.Fatal("after moving, d re-arms the new row instead of deleting")
+	}
+	press(m, "p") // another key in between disarms as well
+	press(m, "d")
+	if len(m.rows[tabClips]) != 2 {
+		t.Fatal("d, p, d must not delete")
+	}
+	press(m, "d")
+	if len(m.rows[tabClips]) != 1 || !strings.Contains(m.flash, "u to undo") {
+		t.Fatalf("d d deletes and says how to undo (flash=%q)", m.flash)
+	}
+	// a click in between disarms too
+	press(m, "d")
+	m.click(zoneRow(0), true)
+	m.overlay = overlayNone
+	if m.armed != (armed{}) {
+		t.Fatal("clicking disarms")
+	}
+}
+
+func TestUndoRestoresAClipInPlace(t *testing.T) {
+	m := newTestModel(t, "a", "b", "c") // list order: c, b, a
+	press(m, "j")                       // on b
+	press(m, "d")
+	press(m, "d")
+	if got := rowTexts(m); len(got) != 2 || got[0] != "c" || got[1] != "a" {
+		t.Fatalf("after delete: %v", got)
+	}
+	press(m, "u")
+	if got := rowTexts(m); len(got) != 3 || got[0] != "c" || got[1] != "b" || got[2] != "a" {
+		t.Fatalf("undo must put b back in the same place: %v", got)
+	}
+	if c, _ := m.selectedClip(); string(c.disp) != "b" {
+		t.Fatalf("the restored entry is highlighted, got %q", c.disp)
+	}
+	if !strings.Contains(m.flash, "restored") {
+		t.Fatalf("flash=%q", m.flash)
+	}
+	if len(m.undo) != 0 {
+		t.Fatal("the undo entry is used up")
+	}
+}
+
+func TestUndoKeepsPinAndImageBytes(t *testing.T) {
+	m := newTestModel(t, "plain")
+	data := pngBytes(50, 30, color.NRGBA{R: 7})
+	addImage(t, m, "keep.png", data)
+	press(m, "home")
+	press(m, "p") // pin the image
+	press(m, "d")
+	press(m, "d")
+	if len(m.rows[tabClips]) != 1 {
+		t.Fatal("image should be gone")
+	}
+	press(m, "u")
+	c, ok := m.selectedClip()
+	if !ok || c.c.Kind != store.ClipImage || !c.c.Pinned || string(c.disp) != "keep.png" {
+		t.Fatalf("restored entry: %+v", c.c)
+	}
+	got, mime, err := m.st.ClipData(context.Background(), c.c.ID)
+	if err != nil || !bytes.Equal(got, data) || mime != "image/png" {
+		t.Fatalf("image bytes must come back intact (err=%v)", err)
+	}
+	if m.clips[m.rows[tabClips][0].idx].c.ID != c.c.ID {
+		t.Fatal("a pinned entry returns to the top")
+	}
+}
+
+func TestUndoIsNewestFirstAndRepeatable(t *testing.T) {
+	m := newTestModel(t, "a", "b", "c")
+	for i := 0; i < 3; i++ { // delete c, b, a in turn
+		press(m, "d")
+		press(m, "d")
+	}
+	if len(m.rows[tabClips]) != 0 || len(m.undo) != 3 {
+		t.Fatalf("rows=%d undo=%d", len(m.rows[tabClips]), len(m.undo))
+	}
+	press(m, "u")
+	if got := rowTexts(m); len(got) != 1 || got[0] != "a" {
+		t.Fatalf("the newest delete (a) comes back first: %v", got)
+	}
+	press(m, "u")
+	press(m, "u")
+	if got := rowTexts(m); len(got) != 3 || got[0] != "c" || got[1] != "b" || got[2] != "a" {
+		t.Fatalf("three undos restore everything in the original order: %v", got)
+	}
+	press(m, "u")
+	if m.flash != "nothing to undo" {
+		t.Fatalf("flash=%q", m.flash)
+	}
+}
+
+func TestUndoSnippetSwitchesToItsTab(t *testing.T) {
+	m := newTestModel(t, "clip")
+	press(m, "tab")
+	addSnippet(t, m, "mail", "me@example.com", false)
+	press(m, "d")
+	press(m, "d")
+	if len(m.rows[tabSnips]) != 0 {
+		t.Fatal("snippet should be gone")
+	}
+	press(m, "tab") // look at the clips, then undo
+	press(m, "u")
+	if m.tab != tabSnips || len(m.rows[tabSnips]) != 1 {
+		t.Fatalf("undo shows where the snippet came back (tab=%d rows=%d)", m.tab, len(m.rows[tabSnips]))
+	}
+	if sn, _ := m.selectedSnip(); sn.s.Name != "mail" || sn.s.Body != "me@example.com" {
+		t.Fatalf("got %+v", sn.s)
+	}
+}
+
+func TestUndoDoesNotDuplicateWhatWasCopiedAgain(t *testing.T) {
+	m := newTestModel(t, "x", "again")
+	press(m, "d")
+	press(m, "d")                                                                      // delete "again"
+	if _, err := m.st.AddClip(context.Background(), "again", 100, 1<<20); err != nil { // the daemon sees it copied once more
+		t.Fatal(err)
+	}
+	m.reload()
+	press(m, "u")
+	n := 0
+	for _, s := range rowTexts(m) {
+		if s == "again" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d copies of the text after undo, want 1: %v", n, rowTexts(m))
+	}
+}
+
+func TestUKeyTypesWhileSearching(t *testing.T) {
+	m := newTestModel(t, "unicorn", "other")
+	press(m, "d")
+	press(m, "d")
+	press(m, "i")
+	typeText(m, "u")
+	if m.panes[tabClips].query.String() != "u" || len(m.undo) != 1 {
+		t.Fatalf("in search mode u is a letter: query=%q undo=%d", m.panes[tabClips].query.String(), len(m.undo))
+	}
+}
+
+func TestUndoReportsEntriesHiddenBySearch(t *testing.T) {
+	m := newTestModel(t, "apple", "banana")
+	press(m, "d") // arm banana (the newest)
+	press(m, "d")
+	press(m, "i")
+	typeText(m, "app")
+	press(m, "esc")
+	press(m, "u")
+	if !strings.Contains(m.flash, "hidden by your search") {
+		t.Fatalf("flash=%q", m.flash)
+	}
+	m.panes[tabClips].query.set("")
+	m.refilter(tabClips)
+	if len(m.rows[tabClips]) != 2 {
+		t.Fatal("banana must be back")
+	}
+}
+
+func TestUndoStackIsBounded(t *testing.T) {
+	var clips []string
+	for i := 0; i < maxUndo+5; i++ {
+		clips = append(clips, fmt.Sprintf("entry %03d", i))
+	}
+	m := newTestModel(t, clips...)
+	for i := 0; i < maxUndo+5; i++ {
+		press(m, "d")
+		press(m, "d")
+	}
+	if len(m.undo) != maxUndo {
+		t.Fatalf("undo history is capped at %d, got %d", maxUndo, len(m.undo))
+	}
+}
+
+func TestFooterOffersUndoOnlyWhenThereIsSomething(t *testing.T) {
+	m := newTestModel(t, "a", "b")
+	if strings.Contains(view(m), "undo") {
+		t.Fatal("no undo hint before any delete")
+	}
+	press(m, "d")
+	press(m, "d")
+	m.flash = ""
+	if !strings.Contains(view(m), "u undo") {
+		t.Fatalf("after a delete the footer offers undo:\n%s", view(m))
 	}
 }

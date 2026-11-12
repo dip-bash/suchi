@@ -36,19 +36,19 @@ On **X11** you also need `xclip` (or `xsel`); Wayland needs nothing extra.
 ### Build from source
 
 ```sh
-go mod tidy                    # once: fetches dependencies, writes go.sum
-make build                     # -> suchi
-make cross-build VERSION=0.5.0 # -> dist/suchi-linux-x86_64 dist/suchi-linux-aarch64
+go mod tidy                       # once: fetches dependencies, writes go.sum
+make build                        # -> bin/suchi
+make cross-build VERSION=0.5.0    # -> dist/suchi-linux-{amd64,arm64,arm,386} + checksums.txt
 make test
 ```
 
 ### Publishing a release
 
-There is no CI. Tag and push manually, then build the binaries yourself:
+`install.sh` downloads the files a GitHub release contains. Pushing a tag builds and publishes them
+(`.github/workflows/release.yml`):
 
 ```sh
 git tag v0.5.0 && git push origin v0.5.0
-make cross-build VERSION=0.5.0
 ```
 
 ## Use
@@ -75,7 +75,8 @@ Start the watcher at every login with `systemctl --user enable --now suchi` (the
 | `j` `k` `↑` `↓` | move (`PgUp`/`PgDn`/`Home`/`End` also work) |
 | `i` | search (`Esc` leaves it) · `f` toggles fuzzy matching |
 | `Enter` | copy the highlighted entry **and close** |
-| `d` | delete (snippets: press twice) |
+| `d` `d` | delete the highlighted entry: press `d` twice (the first press only asks) |
+| `u` | undo the last delete; press again for the one before, until you close suchi |
 | `?` | help · `Esc` closes a popup, or quits |
 
 **Clip tab:** `e` opens the entry (read-only) · `p` pins it to the top.
@@ -131,7 +132,7 @@ A snippet has a **name** (names need not be unique), a **text** and a **type**:
 
 ![Snip tab](docs/snip.png)
 
-`Enter` copies a snippet's text. `r` (or a click) runs a command snippet in your shell, shows its output, and
+Deleting a snippet works like a clip (`d` twice, `u` to undo). `Enter` copies a snippet's text. `r` (or a click) runs a command snippet in your shell, shows its output, and
 returns to suchi when you press Enter. A snippet you copy never shows up in the Clip tab.
 
 ```sh

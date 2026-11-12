@@ -69,6 +69,25 @@ type pane struct {
 	sel, top int
 }
 
+// armed is the entry a first "d" has selected for deletion.
+type armed struct {
+	tab tabID
+	id  int64
+}
+
+// undoItem is a deleted entry kept in memory so "u" can bring it back.
+type undoItem struct {
+	tab   tabID
+	clip  store.DeletedClip
+	snip  store.Snippet
+	label string
+}
+
+const (
+	maxUndo      = 50
+	maxUndoBytes = 64 << 20 // image bytes kept for undo
+)
+
 type tickMsg time.Time
 
 type execDoneMsg struct {
@@ -101,7 +120,8 @@ type model struct {
 
 	flash      string
 	flashUntil time.Time
-	armed      int64 // snippet id waiting for a second "d" to be deleted
+	armed      armed      // the entry waiting for a second "d" to be deleted
+	undo       []undoItem // deleted entries, newest last, restorable with "u" until suchi closes
 
 	pill, scroll, open spring
 	frameRunning       bool
@@ -285,15 +305,15 @@ func (m *model) move(delta int) {
 	m.clamp(t)
 }
 
-// setTab switches tab: the pill slides, the list does not animate.
+// setTab switches tab instantly.
 func (m *model) setTab(t tabID) {
 	if t == m.tab {
 		return
 	}
 	m.tab = t
-	m.armed = 0
+	m.armed = armed{}
 	m.clamp(t)
-	m.pill.set(float64(tabStart(t)))
+	m.pill.jump(float64(tabStart(t))) // switching tabs is instant
 	m.scroll.jump(float64(m.panes[t].top))
 }
 

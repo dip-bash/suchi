@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -78,7 +79,7 @@ func (m *model) key(msg tea.KeyMsg) tea.Cmd {
 
 func (m *model) keyNormal(k string) tea.Cmd {
 	if k != "d" {
-		m.armed = 0
+		m.armed = armed{}
 	}
 	switch k {
 	case "esc":
@@ -114,6 +115,8 @@ func (m *model) keyNormal(k string) tea.Cmd {
 		return m.choose()
 	case "d":
 		m.remove()
+	case "u":
+		m.undoDelete()
 	case "p":
 		m.togglePin()
 	case "e":
@@ -247,7 +250,7 @@ func (m *model) click(id string, right bool) tea.Cmd {
 		}
 		m.panes[m.tab].sel = i
 		m.clamp(m.tab)
-		m.armed = 0
+		m.armed = armed{}
 		if right { // right click: the same as "e"
 			return m.openEntry()
 		}
@@ -306,35 +309,101 @@ func (m *model) choose() tea.Cmd {
 	return tea.Quit
 }
 
-// remove deletes a clip at once; a snippet needs a second "d" because it is
-// user-written data that cannot be recovered from the clipboard.
+// entryLabel names the highlighted entry for messages.
+func (m *model) entryLabel() string {
+	if m.tab == tabSnips {
+		if sn, ok := m.selectedSnip(); ok {
+			return fmt.Sprintf("%q", m.clip(sn.s.Name, 24))
+		}
+		return ""
+	}
+	c, ok := m.selectedClip()
+	if !ok {
+		return ""
+	}
+	if c.c.Kind == store.ClipFile {
+		return fmt.Sprintf("%q", filepath.Base(c.paths[0]))
+	}
+	return fmt.Sprintf("%q", m.clip(string(c.disp), 24))
+}
+
+// remove deletes the highlighted entry. It always takes two presses of "d":
+// the first marks the entry, the second deletes it. "u" brings it back.
 func (m *model) remove() {
 	id := m.selectedID(m.tab)
 	if id == 0 {
 		return
 	}
+	label := m.entryLabel()
+	if m.armed != (armed{m.tab, id}) {
+		m.armed = armed{m.tab, id}
+		m.setFlash("press d again to delete " + label)
+		return
+	}
+	m.armed = armed{}
+
+	it := undoItem{tab: m.tab, label: label}
 	if m.tab == tabClips {
-		if err := m.st.DeleteClip(m.ctx, id); err != nil {
+		d, err := m.st.GetClip(m.ctx, id) // a full copy, image bytes included, for undo
+		if err == nil {
+			err = m.st.DeleteClip(m.ctx, id)
+		}
+		if err != nil {
 			m.setFlash(err.Error())
 			return
 		}
-		m.reload()
-		m.setFlash("deleted")
-		return
-	}
-	if m.armed != id {
-		m.armed = id
+		it.clip = d
+	} else {
 		sn, _ := m.selectedSnip()
-		m.setFlash(fmt.Sprintf("press d again to delete %q", sn.s.Name))
-		return
+		if err := m.st.DeleteSnippet(m.ctx, id); err != nil {
+			m.setFlash(err.Error())
+			return
+		}
+		it.snip = sn.s
 	}
-	m.armed = 0
-	if err := m.st.DeleteSnippet(m.ctx, id); err != nil {
-		m.setFlash(err.Error())
-		return
+	m.undo = append(m.undo, it)
+	for len(m.undo) > 1 && (len(m.undo) > maxUndo || m.undoBytes() > maxUndoBytes) {
+		m.undo = m.undo[1:] // forget the oldest
 	}
 	m.reload()
-	m.setFlash("deleted")
+	m.setFlash("deleted " + label + " - press u to undo")
+}
+
+func (m *model) undoBytes() int {
+	n := 0
+	for _, it := range m.undo {
+		n += it.clip.Bytes()
+	}
+	return n
+}
+
+// undoDelete restores the most recently deleted entry (repeat for older ones).
+func (m *model) undoDelete() {
+	if len(m.undo) == 0 {
+		m.setFlash("nothing to undo")
+		return
+	}
+	it := m.undo[len(m.undo)-1]
+	var id int64
+	var err error
+	if it.tab == tabClips {
+		id, err = m.st.RestoreClip(m.ctx, it.clip)
+	} else {
+		id, err = m.st.RestoreSnippet(m.ctx, it.snip)
+	}
+	if err != nil {
+		m.setFlash("could not restore: " + err.Error())
+		return
+	}
+	m.undo = m.undo[:len(m.undo)-1]
+	m.reload()
+	m.setTab(it.tab) // show where it came back
+	m.selectID(it.tab, id)
+	if m.selectedID(it.tab) == id {
+		m.setFlash("restored " + it.label)
+	} else {
+		m.setFlash("restored " + it.label + " (hidden by your search)")
+	}
 }
 
 func (m *model) togglePin() {

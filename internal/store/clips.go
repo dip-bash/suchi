@@ -326,3 +326,93 @@ func ExtForMime(mime string) string {
 	}
 	return "img"
 }
+
+// DeletedClip is a complete copy of a history entry (including image bytes),
+// kept by the UI so a delete can be undone.
+type DeletedClip struct {
+	ID       int64
+	Kind     string
+	Text     string
+	Mime     string
+	Data     []byte
+	Size     int64
+	Hash     string
+	Pinned   bool
+	CopiedAt int64
+	UsedAt   int64
+}
+
+// Bytes is the memory the copy occupies.
+func (d DeletedClip) Bytes() int { return len(d.Data) + len(d.Text) }
+
+// GetClip reads a complete history entry.
+func (s *Store) GetClip(ctx context.Context, id int64) (DeletedClip, error) {
+	var d DeletedClip
+	var pin int
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, kind, text, mime, data, size, hash, pinned, copied_at, used_at FROM clips WHERE id = ?`, id).
+		Scan(&d.ID, &d.Kind, &d.Text, &d.Mime, &d.Data, &d.Size, &d.Hash, &pin, &d.CopiedAt, &d.UsedAt)
+	if err != nil {
+		return DeletedClip{}, fmt.Errorf("read clip %d: %w", id, err)
+	}
+	d.Pinned = pin != 0
+	return d, nil
+}
+
+// RestoreClip puts a deleted entry back with its original pin state and
+// timestamps, so it returns to the same place in the list. It keeps the
+// original id when that is still free. If the same content has been copied
+// again in the meantime, that entry is reused (nothing is duplicated) and
+// takes the better of the two pin states and timestamps. It returns the id
+// the entry now has.
+func (s *Store) RestoreClip(ctx context.Context, d DeletedClip) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var existing int64
+	var q *sql.Row
+	if d.Kind == ClipImage {
+		q = tx.QueryRowContext(ctx, `SELECT id FROM clips WHERE kind = 'image' AND hash = ?`, d.Hash)
+	} else {
+		q = tx.QueryRowContext(ctx, `SELECT id FROM clips WHERE kind = ? AND text = ?`, d.Kind, d.Text)
+	}
+	switch err := q.Scan(&existing); {
+	case err == nil: // copied again meanwhile: merge instead of duplicating
+		pin := 0
+		if d.Pinned {
+			pin = 1
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE clips SET pinned = max(pinned, ?), copied_at = max(copied_at, ?),
+			used_at = max(used_at, ?) WHERE id = ?`, pin, d.CopiedAt, d.UsedAt, existing); err != nil {
+			return 0, err
+		}
+		return existing, tx.Commit()
+	case err != sql.ErrNoRows:
+		return 0, err
+	}
+
+	var taken int
+	_ = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM clips WHERE id = ?`, d.ID).Scan(&taken)
+	var id any = d.ID
+	if taken > 0 {
+		id = nil // the id was reused by a newer entry; let SQLite pick one
+	}
+	var data any
+	if d.Kind == ClipImage {
+		data = d.Data
+	}
+	pin := 0
+	if d.Pinned {
+		pin = 1
+	}
+	res, err := tx.ExecContext(ctx, `INSERT INTO clips (id, kind, text, mime, data, size, hash, pinned, copied_at, used_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, d.Kind, d.Text, d.Mime, data, d.Size, d.Hash, pin, d.CopiedAt, d.UsedAt)
+	if err != nil {
+		return 0, fmt.Errorf("restore clip: %w", err)
+	}
+	newID, _ := res.LastInsertId()
+	return newID, tx.Commit()
+}

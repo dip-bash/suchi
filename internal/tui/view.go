@@ -326,10 +326,20 @@ func (m *model) footerHints() []hint {
 	switch {
 	case m.search:
 		return []hint{{"Enter", "copy"}, {"↑↓", "move"}, {"Esc", "done"}}
-	case m.tab == tabClips:
-		return []hint{{"Enter", "copy"}, {"e", "view"}, {"d", "delete"}, {"p", "pin"}, {"i", "search"}, {"Tab", "snip"}, {"?", "help"}}
 	}
-	return []hint{{"Enter", "copy"}, {"r", "run"}, {"a", "add"}, {"e", "edit"}, {"d", "delete"}, {"i", "search"}, {"Tab", "clip"}, {"?", "help"}}
+	var hs []hint
+	if m.tab == tabClips {
+		hs = []hint{{"Enter", "copy"}, {"e", "view"}, {"d", "delete"}}
+	} else {
+		hs = []hint{{"Enter", "copy"}, {"r", "run"}, {"a", "add"}, {"e", "edit"}, {"d", "delete"}}
+	}
+	if len(m.undo) > 0 {
+		hs = append(hs, hint{"u", "undo"})
+	}
+	if m.tab == tabClips {
+		return append(hs, hint{"p", "pin"}, hint{"i", "search"}, hint{"Tab", "snip"}, hint{"?", "help"})
+	}
+	return append(hs, hint{"i", "search"}, hint{"Tab", "clip"}, hint{"?", "help"})
 }
 
 func (m *model) viewFooter() string {
@@ -379,7 +389,8 @@ func (m *model) viewHelp() string {
 		{"i", "search (Esc leaves it)"},
 		{"f", "toggle fuzzy search"},
 		{"Enter", "copy and close"},
-		{"d", "delete (snippets: twice)"},
+		{"d", "delete (press twice)"},
+		{"u", "undo a delete"},
 		{"", ""},
 		{"Clip", ""},
 		{"e", "view: text, picture, files"},

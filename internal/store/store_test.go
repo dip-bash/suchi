@@ -459,3 +459,126 @@ func TestExtForMime(t *testing.T) {
 		}
 	}
 }
+
+func TestRestoreClipBringsBackEverything(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	lim := Limits{Count: 100, MaxText: 1 << 20, MaxMedia: 1 << 20}
+	png := []byte("\x89PNG-image-bytes")
+	_, _ = s.AddItem(ctx, NewClip{Kind: ClipImage, Mime: "image/png", Data: png}, lim)
+	time.Sleep(3 * time.Millisecond)
+	_, _ = s.AddClip(ctx, "newer", 100, 1<<20)
+	cl, _ := s.ListClips(ctx)
+	var img Clip
+	for _, c := range cl {
+		if c.Kind == ClipImage {
+			img = c
+		}
+	}
+	_ = s.TogglePin(ctx, img.ID)
+	_ = s.TouchClip(ctx, img.ID)
+	before, _ := s.ListClips(ctx)
+
+	saved, err := s.GetClip(ctx, img.ID)
+	if err != nil || !saved.Pinned || string(saved.Data) != string(png) {
+		t.Fatalf("GetClip: %+v %v", saved, err)
+	}
+	_ = s.DeleteClip(ctx, img.ID)
+	if got, _ := s.ListClips(ctx); len(got) != 1 {
+		t.Fatal("delete failed")
+	}
+	id, err := s.RestoreClip(ctx, saved)
+	if err != nil || id != img.ID {
+		t.Fatalf("restore: id=%d err=%v (want the original id %d)", id, err, img.ID)
+	}
+	after, _ := s.ListClips(ctx)
+	if len(after) != len(before) {
+		t.Fatalf("%d entries, want %d", len(after), len(before))
+	}
+	for i := range before { // same order, pin state and timestamps
+		b, a := before[i], after[i]
+		if b.ID != a.ID || b.Pinned != a.Pinned || !b.CopiedAt.Equal(a.CopiedAt) || !b.UsedAt.Equal(a.UsedAt) || b.Kind != a.Kind {
+			t.Fatalf("entry %d differs:\n before %+v\n after  %+v", i, b, a)
+		}
+	}
+	data, mime, _ := s.ClipData(ctx, id)
+	if string(data) != string(png) || mime != "image/png" {
+		t.Fatal("image bytes lost")
+	}
+}
+
+func TestRestoreClipEdgeCases(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	_, _ = s.AddClip(ctx, "gone", 100, 1<<20)
+	cl, _ := s.ListClips(ctx)
+	saved, _ := s.GetClip(ctx, cl[0].ID)
+	_ = s.DeleteClip(ctx, saved.ID)
+
+	// 1. the id was reused by a newer entry: restore must pick another id, not fail or clobber
+	_, _ = s.AddClip(ctx, "takes the old id", 100, 1<<20)
+	id, err := s.RestoreClip(ctx, saved)
+	if err != nil || id == saved.ID {
+		t.Fatalf("id=%d err=%v", id, err)
+	}
+	if n := len(texts(t, s)); n != 2 {
+		t.Fatalf("%d entries", n)
+	}
+
+	// 2. the same text was copied again meanwhile: no duplicate, pin and the older timestamps merge in
+	_ = s.DeleteClip(ctx, id)
+	_, _ = s.AddClip(ctx, "gone", 100, 1<<20)
+	saved.Pinned = true
+	id2, err := s.RestoreClip(ctx, saved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	cl, _ = s.ListClips(ctx)
+	for _, c := range cl {
+		if c.Preview == "gone" {
+			n++
+			if !c.Pinned || c.ID != id2 {
+				t.Fatalf("merged entry should be pinned: %+v", c)
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d copies of the text, want 1", n)
+	}
+}
+
+func TestRestoreSnippet(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	id, _ := s.AddSnippet(ctx, Snippet{Name: "mail", Body: "me@example.com"})
+	sn, err := s.GetSnippet(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.DeleteSnippet(ctx, id)
+	if _, err := s.GetSnippet(ctx, id); err == nil {
+		t.Fatal("deleted snippet must not be readable")
+	}
+	got, err := s.RestoreSnippet(ctx, sn)
+	if err != nil || got != id {
+		t.Fatalf("id=%d err=%v", got, err)
+	}
+	back, _ := s.GetSnippet(ctx, got)
+	if back.Name != "mail" || back.Body != "me@example.com" || !back.CreatedAt.Equal(sn.CreatedAt) {
+		t.Fatalf("got %+v want %+v", back, sn)
+	}
+	// id taken by another snippet -> a new id, nothing overwritten
+	_ = s.DeleteSnippet(ctx, got)
+	other, _ := s.AddSnippet(ctx, Snippet{Name: "other", Body: "x"})
+	if other != id {
+		t.Skip("sqlite did not reuse the id here")
+	}
+	again, err := s.RestoreSnippet(ctx, sn)
+	if err != nil || again == id {
+		t.Fatalf("id=%d err=%v", again, err)
+	}
+	if all, _ := s.ListSnippets(ctx); len(all) != 2 {
+		t.Fatalf("%d snippets", len(all))
+	}
+}
