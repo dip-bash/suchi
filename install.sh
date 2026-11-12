@@ -57,4 +57,37 @@ else
 fi
 
 echo "==> Suchi installed successfully!"
-echo "Run 'suchi daemon' to start the clipboard watcher."
+
+# ---- systemd user unit --------------------------------------------------------
+UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+UNIT_FILE="$UNIT_DIR/suchi.service"
+UNIT_BIN="${INSTALL_DIR}/${BINARY_NAME}"
+
+if [ "$(id -u)" != 0 ] && command -v systemctl >/dev/null 2>&1 \
+   && systemctl --user --version >/dev/null 2>&1; then
+    mkdir -p "$UNIT_DIR"
+    cat > "$UNIT_FILE" <<EOF
+[Unit]
+Description=suchi clipboard history watcher
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=${UNIT_BIN} daemon --foreground
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
+EOF
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
+    systemctl --user enable --now suchi.service >/dev/null 2>&1 || true
+    echo "==> systemd user unit installed at $UNIT_FILE"
+    echo "    Start:   systemctl --user start suchi.service"
+    echo "    Status:  systemctl --user status suchi.service"
+    echo "    Logs:    journalctl --user -u suchi.service -f"
+else
+    echo "    (skipped systemd user unit - not available or running as root)"
+fi
+
+echo "Run 'suchi daemon' to start the clipboard watcher manually."
