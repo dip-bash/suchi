@@ -194,23 +194,41 @@ func (e env) runUI(cfg config.Config, args []string) error {
 	ctx, stop := signalContext()
 	defer stop()
 
+	var uiLock *pidlock.Lock
 	if !multiple {
 		// Newest window wins: ask the interface that is already open to close.
-		lock, err := pidlock.Takeover(ctx, cfg.UIPIDPath(), 3*time.Second)
-		if err != nil {
-			return err
+		var lockErr error
+		uiLock, lockErr = pidlock.Takeover(ctx, cfg.UIPIDPath(), 3*time.Second)
+		if lockErr != nil {
+			return lockErr
 		}
-		defer lock.Release()
+		// Keep a fallback release for every early return, but release it as soon
+		// as the TUI and its database are closed (before clipboard delivery).
+		defer func() {
+			if uiLock != nil {
+				uiLock.Release()
+			}
+		}()
 	}
 
 	st, err := store.Open(cfg.DBPath)
 	if err != nil {
 		return err
 	}
-	res, err := tui.Run(ctx, st, tui.Options{ASCII: ascii})
-	_ = st.Close()
-	if err != nil || !res.Chosen {
-		return err
+	res, runErr := tui.Run(ctx, st, tui.Options{ASCII: ascii})
+	closeErr := st.Close()
+	if uiLock != nil {
+		uiLock.Release()
+		uiLock = nil
+	}
+	if runErr != nil {
+		return runErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if !res.Chosen {
+		return nil
 	}
 	if print {
 		return e.printResult(res)

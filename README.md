@@ -60,9 +60,9 @@ suchi stop          # stop the watcher
 suchi status        # what is running, which backend, where the database is
 ```
 
-**One window at a time:** opening a new `suchi` closes the one that is already open, so a key binding such as
-`footclient -W 80x30 suchi` never piles up windows. (An open window that is busy running a command snippet closes
-when the command finishes.) Use `suchi --allow-multiple` to opt out.
+**One window at a time:** opening a new `suchi` asks the one that is already open to exit, so a key binding such as
+`footclient -W 80x30 suchi` never piles up windows. The old window gets three seconds to shut down cleanly; if it
+is still holding the UI lock, Suchi force-stops that process as a last resort. Use `suchi --allow-multiple` to opt out.
 
 Start the watcher at every login with `systemctl --user enable --now suchi` (the installer sets the unit up), or add
 `suchi daemon` to your session's autostart.

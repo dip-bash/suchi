@@ -91,6 +91,17 @@ func TestAcquireHolderRelease(t *testing.T) {
 	if held, _ := Holder(p); held {
 		t.Fatal("released")
 	}
+	// A stale PID is expected: flock, not file contents, is authoritative.
+	data, err := os.ReadFile(p)
+	if err != nil || strings.TrimSpace(string(data)) != strconv.Itoa(os.Getpid()) {
+		t.Fatalf("release should not clear PID before dropping the lock: %q, %v", data, err)
+	}
+	// The next owner overwrites that stale PID after successfully locking.
+	next, err := Acquire(p)
+	if err != nil {
+		t.Fatalf("stale PID must not block reacquisition: %v", err)
+	}
+	next.Release()
 }
 
 func TestStalePidFileDoesNotBlock(t *testing.T) {
@@ -133,6 +144,25 @@ func TestTakeoverClosesThePreviousHolder(t *testing.T) {
 	}
 }
 
+func TestRapidSuccessiveTakeovers(t *testing.T) {
+	p := lockPath(t)
+	for i := 0; i < 5; i++ {
+		old := startHelper(t, "polite", p)
+		l, err := Takeover(context.Background(), p, time.Second)
+		if err != nil {
+			t.Fatalf("takeover %d: %v", i+1, err)
+		}
+		if err := old.Wait(); err != nil {
+			t.Fatalf("previous window %d did not exit cleanly: %v", i+1, err)
+		}
+		if held, pid := Holder(p); !held || pid != os.Getpid() {
+			_ = l
+			t.Fatalf("takeover %d did not own the lock: held=%v pid=%d", i+1, held, pid)
+		}
+		l.Release()
+	}
+}
+
 func TestTakeoverWithNoHolderIsImmediate(t *testing.T) {
 	start := time.Now()
 	l, err := Takeover(context.Background(), lockPath(t), time.Second)
@@ -142,16 +172,24 @@ func TestTakeoverWithNoHolderIsImmediate(t *testing.T) {
 	l.Release()
 }
 
-// A holder that will not close is reported, never SIGKILLed (that would leave its terminal broken).
-func TestTakeoverGivesUpOnAStubbornHolder(t *testing.T) {
+// A holder that ignores SIGTERM is force-stopped only after the graceful window.
+func TestTakeoverKillsStubbornHolderAfterGrace(t *testing.T) {
 	p := lockPath(t)
 	stubborn := startHelper(t, "stubborn", p)
-	_, err := Takeover(context.Background(), p, 400*time.Millisecond)
-	if err == nil || !strings.Contains(err.Error(), strconv.Itoa(stubborn.Process.Pid)) {
-		t.Fatalf("want an error naming the holder, got %v", err)
+	start := time.Now()
+	l, err := Takeover(context.Background(), p, 400*time.Millisecond)
+	if err != nil {
+		t.Fatalf("takeover after graceful timeout: %v", err)
 	}
-	if err := stubborn.Process.Signal(syscall.Signal(0)); err != nil {
-		t.Fatal("the stubborn holder must still be alive (no SIGKILL)")
+	defer l.Release()
+	if elapsed := time.Since(start); elapsed < 350*time.Millisecond || elapsed > 2*time.Second {
+		t.Fatalf("force-stop timing = %v; want the graceful window plus a short poll", elapsed)
+	}
+	if err := stubborn.Wait(); err == nil {
+		t.Fatal("a process ignoring SIGTERM should be killed after the grace period")
+	}
+	if held, pid := Holder(p); !held || pid != os.Getpid() {
+		t.Fatalf("new process must own the lock after takeover: held=%v pid=%d", held, pid)
 	}
 }
 
