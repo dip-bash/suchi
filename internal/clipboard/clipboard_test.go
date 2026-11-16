@@ -335,6 +335,13 @@ func TestSanitizeForTerminal(t *testing.T) {
 	}
 }
 
+func TestSanitizeForTerminalNeutralisesBidiAndFormatCharacters(t *testing.T) {
+	got := SanitizeForTerminal("safe\u202Etxt\u2066hidden\u2069\u2028next")
+	if got != "safe·txt·hidden··next" {
+		t.Fatalf("format controls were not neutralised: %q", got)
+	}
+}
+
 func TestInjectableOnlyAllowsOneCleanLine(t *testing.T) {
 	for s, want := range map[string]bool{
 		"ls -la": true, "echo héllo": true, "": false,
@@ -474,6 +481,7 @@ func TestItemFramingRoundTrip(t *testing.T) {
 		{Kind: KindText, Text: "line1\nline2 ✓"},
 		{Kind: KindFiles, MIME: "text/uri-list", Text: "/a/b\n/c/d"},
 		{Kind: KindImage, MIME: "image/png", Data: []byte{0, 1, 2, '\n', 255}},
+		{Kind: KindArchive, MIME: "application/gzip", Data: []byte{31, 139, 0, 1, 2, 255}},
 	} {
 		var buf bytes.Buffer
 		if err := encodeItem(&buf, it); err != nil {
@@ -486,5 +494,14 @@ func TestItemFramingRoundTrip(t *testing.T) {
 	}
 	if _, err := decodeItem(bytes.NewReader([]byte("not json\nbody"))); err == nil {
 		t.Fatal("garbage must be rejected")
+	}
+}
+
+func TestFormatsForArchive(t *testing.T) {
+	data := []byte{31, 139, 8, 0, 255}
+	formats := Formats(Item{Kind: KindArchive, MIME: "application/gzip", Data: data})
+	if len(formats) != 2 || formats[0].MIME != "application/gzip" || formats[1].MIME != "application/x-gzip" ||
+		!bytes.Equal(formats[0].Data, data) || !bytes.Equal(formats[1].Data, data) {
+		t.Fatalf("unexpected archive formats: %+v", formats)
 	}
 }

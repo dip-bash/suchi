@@ -344,6 +344,10 @@ func (w *wlConn) setup() error {
 
 // readMime reads one representation of an offer through a pipe.
 func (w *wlConn) readMime(id uint32, mime string, maxBytes int) ([]byte, bool) {
+	return w.readMimeWithTimeout(id, mime, maxBytes, 3*time.Second)
+}
+
+func (w *wlConn) readMimeWithTimeout(id uint32, mime string, maxBytes int, timeout time.Duration) ([]byte, bool) {
 	r, wr, err := os.Pipe()
 	if err != nil {
 		return nil, false
@@ -354,7 +358,7 @@ func (w *wlConn) readMime(id uint32, mime string, maxBytes int) ([]byte, bool) {
 	if err != nil {
 		return nil, false
 	}
-	_ = r.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = r.SetReadDeadline(time.Now().Add(timeout))
 	data, err := io.ReadAll(io.LimitReader(r, int64(maxBytes)+1))
 	if err != nil || len(data) > maxBytes {
 		return nil, false

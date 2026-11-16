@@ -22,7 +22,7 @@ type Options struct {
 }
 
 // Run shows the interface and returns what the user chose. It works even
-// when stdin or stdout are pipes (`$(suchi -p)`), by talking to /dev/tty.
+// when stdin or stdout are pipes (`$(suchi --print)`), by talking to /dev/tty.
 func Run(ctx context.Context, st *store.Store, opts Options) (Result, error) {
 	restore, err := attachTTY()
 	if err != nil {

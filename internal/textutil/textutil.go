@@ -27,8 +27,18 @@ var (
 // characters (including ESC) can never reach the terminal. It is used for
 // both searching and drawing so match indices always line up.
 func Display(s string) string {
-	if r := []rune(s); len(r) > DisplayCap {
-		s = string(r[:DisplayCap])
+	// Find the byte boundary of DisplayCap runes without converting the whole
+	// string to []rune. Snippet bodies can be large, while the list only ever
+	// displays this small prefix.
+	if len(s) > DisplayCap {
+		count := 0
+		for i := range s {
+			if count == DisplayCap {
+				s = s[:i]
+				break
+			}
+			count++
+		}
 	}
 	s = invisRe.ReplaceAllString(s, "")
 	s = ctrlRe.ReplaceAllString(s, " ")
@@ -58,33 +68,66 @@ func Match(query, low []rune, fuzzy bool) ([]int, bool) {
 			if qc == ' ' {
 				continue
 			}
-			found := -1
-			for i := pos; i < len(low); i++ {
-				if low[i] == qc {
-					found = i
-					break
-				}
+			for pos < len(low) && low[pos] != qc {
+				pos++
 			}
-			if found < 0 {
+			if pos == len(low) {
 				return nil, false
 			}
-			idx = append(idx, found)
-			pos = found + 1
+			idx = append(idx, pos)
+			pos++
 		}
 		return idx, true
 	}
-	for i := 0; i+len(query) <= len(low); i++ {
-		ok := true
-		for j, qc := range query {
-			if low[i+j] != qc {
-				ok = false
-				break
+	if len(query) > len(low) {
+		return nil, false
+	}
+
+	// Most interactive queries are only a few runes long. The straightforward
+	// scan avoids building a KMP prefix table for every history row; reserve
+	// KMP for longer queries where its linear bound matters.
+	if len(query) <= 8 {
+		for i := 0; i+len(query) <= len(low); i++ {
+			j := 0
+			for j < len(query) && low[i+j] == query[j] {
+				j++
+			}
+			if j == len(query) {
+				idx := make([]int, len(query))
+				for k := range idx {
+					idx[k] = i + k
+				}
+				return idx, true
 			}
 		}
-		if ok {
+		return nil, false
+	}
+
+	// Knuth-Morris-Pratt avoids rescanning the same prefix when a query
+	// contains repeated characters (e.g. "aaaaab") and is not present.
+	prefix := make([]int, len(query))
+	for i, j := 1, 0; i < len(query); i++ {
+		for j > 0 && query[i] != query[j] {
+			j = prefix[j-1]
+		}
+		if query[i] == query[j] {
+			j++
+		}
+		prefix[i] = j
+	}
+	matched := 0
+	for i, r := range low {
+		for matched > 0 && r != query[matched] {
+			matched = prefix[matched-1]
+		}
+		if r == query[matched] {
+			matched++
+		}
+		if matched == len(query) {
+			first := i - len(query) + 1
 			idx := make([]int, len(query))
 			for j := range idx {
-				idx[j] = i + j
+				idx[j] = first + j
 			}
 			return idx, true
 		}
@@ -107,39 +150,52 @@ func Layout(rs []rune, matches []int, cols int, ellipsis string) []Segment {
 	if cols <= 0 {
 		return nil
 	}
-	hit := make(map[int]bool, len(matches))
-	for _, m := range matches {
-		hit[m] = true
-	}
-	total := 0
+
+	// Most rows are much wider than the terminal, but only a screenful of
+	// columns is visible. Stop measuring as soon as truncation is certain
+	// instead of calculating the width of every rune on every redraw.
+	visibleWidth := 0
+	cut := false
 	for _, r := range rs {
-		total += runewidth.RuneWidth(r)
-	}
-	limit := cols
-	cut := total > cols
-	if cut {
-		limit = cols - Width(ellipsis)
-		if limit < 0 {
-			limit = 0
+		visibleWidth += max(0, runewidth.RuneWidth(r))
+		if visibleWidth > cols {
+			cut = true
+			break
 		}
 	}
+	limit := cols
+	if cut {
+		limit = max(0, cols-Width(ellipsis))
+	}
+
 	var segs []Segment
 	var b strings.Builder
-	cur, used := false, 0
+	matchPos, used := 0, 0
+	cur, haveRun := false, false
 	flush := func() {
-		if b.Len() > 0 {
+		if haveRun && b.Len() > 0 {
 			segs = append(segs, Segment{b.String(), cur})
 			b.Reset()
 		}
+		haveRun = false
 	}
 	for i, r := range rs {
-		w := runewidth.RuneWidth(r)
+		w := max(0, runewidth.RuneWidth(r))
 		if used+w > limit {
 			break
 		}
-		if hit[i] != cur {
+		for matchPos < len(matches) && matches[matchPos] < i {
+			matchPos++
+		}
+		isMatch := matchPos < len(matches) && matches[matchPos] == i
+		if isMatch {
+			matchPos++
+		}
+		if !haveRun {
+			cur, haveRun = isMatch, true
+		} else if isMatch != cur {
 			flush()
-			cur = hit[i]
+			cur, haveRun = isMatch, true
 		}
 		b.WriteRune(r)
 		used += w

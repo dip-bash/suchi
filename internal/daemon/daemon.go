@@ -173,6 +173,7 @@ func Start(cfg config.Config) (pid int, err error) {
 		return 0, fmt.Errorf("daemon exited during start-up; see %s", cfg.LogPath())
 	case <-time.After(10 * time.Second):
 		_ = cmd.Process.Kill()
+		_ = cmd.Wait() // reap the child; otherwise repeated starts can leave zombies
 		return 0, fmt.Errorf("daemon did not start in time; see %s", cfg.LogPath())
 	}
 }

@@ -59,6 +59,38 @@ func (Wayland) Set(_ context.Context, it Item, sel Selection) error {
 	}
 }
 
+// ReadFileBundle reads a gzip archive from the selected Wayland offer.
+func (Wayland) ReadFileBundle(ctx context.Context, sel Selection) ([]byte, error) {
+	w, err := dialWayland()
+	if err != nil {
+		return nil, err
+	}
+	defer w.close()
+	if sel == Primary && !w.hasPrimary {
+		return nil, errors.New("this compositor does not support the primary selection")
+	}
+	var offer uint32
+	for _, event := range w.events {
+		if event.kind == sel {
+			offer = event.id
+		}
+	}
+	if offer == 0 {
+		return nil, errors.New("the Wayland file-transfer selection is empty")
+	}
+	for _, mime := range []string{"application/gzip", "application/x-gzip"} {
+		if !has(w.offers[offer], mime) {
+			continue
+		}
+		data, ok := w.readMimeWithTimeout(offer, mime, 512<<20, 2*time.Minute)
+		if !ok {
+			return nil, errors.New("could not read the Wayland file-transfer selection")
+		}
+		return data, nil
+	}
+	return nil, errors.New("the Wayland clipboard does not contain a Suchi/xclip file bundle")
+}
+
 // ServeSelection is the body of the hidden helper process: read the item
 // from in, take ownership of the selection, report "ok" (or "err: ...") on
 // ready, then serve pastes until the selection is replaced.

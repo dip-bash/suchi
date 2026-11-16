@@ -36,19 +36,19 @@ On **X11** you also need `xclip` (or `xsel`); Wayland needs nothing extra.
 ### Build from source
 
 ```sh
-go mod tidy                    # once: fetches dependencies, writes go.sum
-make build                     # -> suchi
-make cross-build VERSION=0.5.0 # -> dist/suchi-linux-x86_64 dist/suchi-linux-aarch64
+go mod tidy                       # once: fetches dependencies, writes go.sum
+make build                        # -> bin/suchi
+make cross-build VERSION=0.5.0    # -> dist/suchi-linux-{amd64,arm64,arm,386} + checksums.txt
 make test
 ```
 
 ### Publishing a release
 
-There is no CI. Tag and push manually, then build the binaries yourself:
+`install.sh` downloads the files a GitHub release contains. Pushing a tag builds and publishes them
+(`.github/workflows/release.yml`):
 
 ```sh
 git tag v0.5.0 && git push origin v0.5.0
-make cross-build VERSION=0.5.0
 ```
 
 ## Use
@@ -75,7 +75,8 @@ Start the watcher at every login with `systemctl --user enable --now suchi` (the
 | `j` `k` `↑` `↓` | move (`PgUp`/`PgDn`/`Home`/`End` also work) |
 | `i` | search (`Esc` leaves it) · `f` toggles fuzzy matching |
 | `Enter` | copy the highlighted entry **and close** |
-| `d` | delete (snippets: press twice) |
+| `d` `d` | delete the highlighted entry: press `d` twice (the first press only asks) |
+| `u` | undo the last delete; press again for the one before, until you close suchi |
 | `?` | help · `Esc` closes a popup, or quits |
 
 **Clip tab:** `e` opens the entry (read-only) · `p` pins it to the top.
@@ -131,16 +132,48 @@ A snippet has a **name** (names need not be unique), a **text** and a **type**:
 
 ![Snip tab](docs/snip.png)
 
-`Enter` copies a snippet's text. `r` (or a click) runs a command snippet in your shell, shows its output, and
+Deleting a snippet works like a clip (`d` twice, `u` to undo). `Enter` copies a snippet's text. `r` (or a click) runs a command snippet in your shell, shows its output, and
 returns to suchi when you press Enter. A snippet you copy never shows up in the Clip tab.
 
 ```sh
 suchi get mail                    # print a snippet: ssh host "$(suchi get deploy)"
 echo "some text" | suchi add      # put text in the history (works anywhere, incl. TTYs)
-suchi -p                          # pick an entry in the UI, print it (images: raw bytes → redirect)
+suchi --print                     # pick an entry in the UI, print it (images: raw bytes → redirect)
 suchi clear [--all]               # delete history (pinned entries stay unless --all)
-suchi import [history.json]       # import the old Python version's history
 ```
+
+### Copy files and folders from the CLI
+
+Suchi can move file data through the clipboard as a gzip-compressed tar
+bundle. This is useful when working entirely in terminals, including across
+machines when both ends can access the same clipboard (for example, through
+X11 forwarding):
+
+```sh
+suchi -c report.pdf photo.jpg recording.mp4 src/  # copy docs, media and folders
+cd /tmp
+suchi -p                                      # extract the bundle into the current directory
+
+suchi -x build/                   # put build/ in the bundle, then remove it recursively
+cd /mnt/backup
+suchi -p                          # restore build/ here
+```
+
+`-c` keeps the source files. Files are copied as binary data, so images,
+audio, video and other media retain their original bytes. `-x` removes source
+files/directories only after the clipboard accepts the bundle. Directory trees
+are removed recursively. `-p [DIR]` pastes into the current directory or the
+directory supplied. Existing destination names are not overwritten, and
+archive paths that escape the destination are rejected.
+
+On X11, Suchi uses the **SECONDARY** selection and the same gzip-tar payload as
+`xclip-copyfile` / `xclip-pastefile`, so these tools can interoperate. On
+Wayland, where data-control has no SECONDARY selection, Suchi uses the regular
+clipboard with an `application/gzip` MIME type. A graphical clipboard is
+required; binary file transfer is not available on a plain TTY.
+
+Cut is safer than `xclip-cutfile`: directory trees are removed recursively,
+and source deletion happens only after the bundle has been published.
 
 ## How it talks to your clipboard
 
@@ -155,10 +188,10 @@ suchi import [history.json]       # import the old Python version's history
 
 ### Pasting in a TTY
 
-A text console has no paste buffer, so bind a key to `suchi -p`. For bash (`~/.bashrc`):
+A text console has no paste buffer, so bind a key to `suchi --print`. For bash (`~/.bashrc`):
 
 ```sh
-bind -x '"\C-x\C-v": __s=$(suchi -p); READLINE_LINE="${READLINE_LINE:0:READLINE_POINT}${__s}${READLINE_LINE:READLINE_POINT}"; READLINE_POINT=$((READLINE_POINT+${#__s}))'
+bind -x '"\C-x\C-v": __s=$(suchi --print); READLINE_LINE="${READLINE_LINE:0:READLINE_POINT}${__s}${READLINE_LINE:READLINE_POINT}"; READLINE_POINT=$((READLINE_POINT+${#__s}))'
 ```
 
 ## Configuration
@@ -191,10 +224,11 @@ The daemon logs to `~/.local/state/suchi/suchi.log`. The database is created `06
 
 ```
 cmd/suchi/              entry point (calls internal/cli)
-internal/cli/           command line: UI, daemon, stop, status, add, get, import, clear
+internal/cli/           command line: UI, daemon, stop, status, add, get, clear, file transfer
 internal/config/        XDG paths, limits, env overrides
 internal/store/         SQLite: race-safe migrations, clips (text/image/file), snippets
 internal/clipboard/     backends: wayland (wire protocol), x11 (XFixes + xclip), tty (OSC 52)
+internal/filebundle/    gzip-tar file bundles and safe extraction for CLI copy/cut/paste
 internal/daemon/        watcher loop, detached start
 internal/pidlock/       flock-based single-instance lock (daemon, and "newest window wins" for the UI)
 internal/preview/       image decoding, kitty/iTerm2/sixel/half-block rendering, file types

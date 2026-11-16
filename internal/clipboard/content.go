@@ -18,14 +18,18 @@ const (
 	KindText  Kind = "text"
 	KindImage Kind = "image"
 	KindFiles Kind = "files"
+	// KindArchive is a binary file bundle used by the CLI file-transfer
+	// commands. It is intentionally not treated as ordinary text by watchers.
+	KindArchive Kind = "archive"
 )
 
-// Item is one thing on the clipboard: text, an image, or a list of copied files.
+// Item is one thing on the clipboard: text, an image, a list of copied files,
+// or a binary archive used by the CLI file-transfer commands.
 type Item struct {
 	Kind Kind
 	Text string // the text, or the absolute file paths (one per line) for KindFiles
 	MIME string // image/png ... for images; text/uri-list for files
-	Data []byte // image bytes
+	Data []byte // image bytes or a binary archive payload
 }
 
 // Limits bound what Watch reports.
@@ -44,7 +48,7 @@ func (it Item) Paths() []string {
 
 // Plain is the closest plain-text form of the item (used when only text can be delivered).
 func (it Item) Plain() string {
-	if it.Kind == KindImage {
+	if it.Kind == KindImage || it.Kind == KindArchive {
 		return ""
 	}
 	return it.Text
@@ -196,6 +200,12 @@ func Formats(it Item) []Format {
 	switch it.Kind {
 	case KindImage:
 		return []Format{{it.MIME, it.Data}}
+	case KindArchive:
+		mime := it.MIME
+		if mime == "" {
+			mime = "application/gzip"
+		}
+		return []Format{{mime, it.Data}, {"application/x-gzip", it.Data}}
 	case KindFiles:
 		paths := it.Paths()
 		uris := make([]string, len(paths))
@@ -230,7 +240,7 @@ func encodeItem(w io.Writer, it Item) error {
 		return err
 	}
 	body := []byte(it.Text)
-	if it.Kind == KindImage {
+	if it.Kind == KindImage || it.Kind == KindArchive {
 		body = it.Data
 	}
 	_, err := w.Write(body)
@@ -252,8 +262,8 @@ func decodeItem(r io.Reader) (Item, error) {
 		return Item{}, err
 	}
 	switch h.Kind {
-	case KindImage:
-		return Item{Kind: KindImage, MIME: h.MIME, Data: body}, nil
+	case KindImage, KindArchive:
+		return Item{Kind: h.Kind, MIME: h.MIME, Data: body}, nil
 	case KindFiles, KindText:
 		return Item{Kind: h.Kind, MIME: h.MIME, Text: string(body)}, nil
 	}

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -68,6 +69,57 @@ func (x X11) readTarget(ctx context.Context, sel Selection, target string, maxBy
 		return nil, false
 	}
 	return out, true
+}
+
+// SetRaw writes bytes to an X11 selection without asking xclip to interpret
+// them as text. This mirrors xclip-copyfile's use of `xclip -selection
+// secondary -i`, which carries a gzip-compressed tar stream.
+func (x X11) SetRaw(ctx context.Context, data []byte, sel Selection) error {
+	return x.SetRawReader(ctx, bytes.NewReader(data), sel)
+}
+
+// SetRawReader streams bytes into an X11 selection without interpreting them
+// as text. This mirrors xclip-copyfile's gzip-tar transfer path.
+func (x X11) SetRawReader(ctx context.Context, src io.Reader, sel Selection) error {
+	if x.tool != "xclip" {
+		return errors.New("file bundles on X11 require xclip (xsel only supports text)")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "xclip", "-selection", string(sel), "-i")
+	cmd.Stdin = src
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("xclip did not accept the file bundle before the timeout: %w", ctx.Err())
+		}
+		return fmt.Errorf("xclip failed to set the %s selection: %w", sel, err)
+	}
+	return nil
+}
+
+// ReadRaw reads the selected bytes without decoding them as UTF-8 text.
+func (x X11) ReadRaw(ctx context.Context, sel Selection) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := x.ReadRawTo(ctx, sel, &buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// ReadRawTo streams an X11 selection to dst without UTF-8 conversion.
+func (x X11) ReadRawTo(ctx context.Context, sel Selection, dst io.Writer) error {
+	if x.tool != "xclip" {
+		return errors.New("file bundles on X11 require xclip (xsel only supports text)")
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "xclip", "-selection", string(sel), "-o")
+	cmd.Stdout = dst
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("read %s selection with xclip: %w", sel, err)
+	}
+	return nil
 }
 
 // read returns what is currently on the selection.

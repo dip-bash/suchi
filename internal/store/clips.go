@@ -130,9 +130,9 @@ func (s *Store) AddItem(ctx context.Context, it NewClip, lim Limits) (added bool
 			size, data = int64(len(it.Data)), it.Data
 		}
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO clips (kind, text, mime, data, size, hash, pinned, copied_at, used_at)
-			 VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0)`,
-			it.Kind, it.Text, it.Mime, data, size, hash, now); err != nil {
+			`INSERT INTO clips (kind, text, mime, data, size, hash, pinned, copied_at, used_at, text_length, multiline)
+			 VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?)`,
+			it.Kind, it.Text, it.Mime, data, size, hash, now, sqliteTextLength(it.Text), strings.Contains(it.Text, "\n")); err != nil {
 			return false, fmt.Errorf("insert clip: %w", err)
 		}
 	}
@@ -173,10 +173,20 @@ func sum(b []byte) string {
 	return hex.EncodeToString(h[:])
 }
 
+// sqliteTextLength mirrors SQLite length(TEXT), which counts Unicode code
+// points and stops at the first embedded NUL. The value is cached on insert
+// so ListClips never has to scan full clipboard payloads.
+func sqliteTextLength(s string) int {
+	if i := strings.IndexByte(s, 0); i >= 0 {
+		s = s[:i]
+	}
+	return utf8.RuneCountInString(s)
+}
+
 // ListClips returns all entries: pinned first, then most recently active.
 func (s *Store) ListClips(ctx context.Context) ([]Clip, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, kind, substr(text, 1, ?), mime, size, length(text), instr(text, char(10)) > 0,
+		SELECT id, kind, substr(text, 1, ?), mime, size, text_length, multiline,
 		       pinned, copied_at, used_at
 		FROM clips ORDER BY pinned DESC, max(copied_at, used_at) DESC, id DESC`, PreviewChars)
 	if err != nil {
@@ -280,23 +290,36 @@ func prune(ctx context.Context, q execer, limit int) error {
 // pruneMedia deletes the oldest unpinned images until the stored image bytes
 // fit the budget.
 func pruneMedia(ctx context.Context, q execer, budget int64) error {
-	for i := 0; i < 1000; i++ {
-		var total int64
-		if err := q.QueryRowContext(ctx, `SELECT COALESCE(SUM(size), 0) FROM clips WHERE kind = 'image'`).Scan(&total); err != nil {
-			return err
-		}
-		if total <= budget {
-			return nil
-		}
-		res, err := q.ExecContext(ctx, `DELETE FROM clips WHERE id = (
-			SELECT id FROM clips WHERE kind = 'image' AND pinned = 0
-			ORDER BY max(copied_at, used_at) ASC, id ASC LIMIT 1)`)
-		if err != nil {
-			return fmt.Errorf("prune media: %w", err)
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return nil // only pinned images remain
-		}
+	// Delete the oldest unpinned images in one statement. The previous loop
+	// ran a SUM query and DELETE for every image over budget, multiplying SQL
+	// round-trips and transaction work during large clipboard bursts.
+	_, err := q.ExecContext(ctx, `
+		WITH
+		pinned AS (
+			SELECT COALESCE(SUM(size), 0) AS bytes
+			FROM clips WHERE kind = 'image' AND pinned = 1
+		),
+		unpinned AS (
+			SELECT id, size,
+			       SUM(size) OVER (ORDER BY max(copied_at, used_at) ASC, id ASC) AS cumulative,
+			       SUM(size) OVER () AS total
+			FROM clips WHERE kind = 'image' AND pinned = 0
+		),
+		limit_to_delete AS (
+			-- Aggregate to exactly one row. Without MAX(total), this CTE
+			-- would repeat the byte limit once per image and make the final
+			-- join quadratic for large histories.
+			SELECT max(0, COALESCE(MAX(unpinned.total), 0) - max(0, ? - pinned.bytes)) AS bytes
+			FROM pinned LEFT JOIN unpinned ON 1 = 1
+		)
+		DELETE FROM clips
+		WHERE id IN (
+			SELECT unpinned.id
+			FROM unpinned CROSS JOIN limit_to_delete
+			WHERE unpinned.cumulative - unpinned.size < limit_to_delete.bytes
+		)`, budget)
+	if err != nil {
+		return fmt.Errorf("prune media: %w", err)
 	}
 	return nil
 }
@@ -408,8 +431,8 @@ func (s *Store) RestoreClip(ctx context.Context, d DeletedClip) (int64, error) {
 	if d.Pinned {
 		pin = 1
 	}
-	res, err := tx.ExecContext(ctx, `INSERT INTO clips (id, kind, text, mime, data, size, hash, pinned, copied_at, used_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, d.Kind, d.Text, d.Mime, data, d.Size, d.Hash, pin, d.CopiedAt, d.UsedAt)
+	res, err := tx.ExecContext(ctx, `INSERT INTO clips (id, kind, text, mime, data, size, hash, pinned, copied_at, used_at, text_length, multiline)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, d.Kind, d.Text, d.Mime, data, d.Size, d.Hash, pin, d.CopiedAt, d.UsedAt, sqliteTextLength(d.Text), strings.Contains(d.Text, "\n"))
 	if err != nil {
 		return 0, fmt.Errorf("restore clip: %w", err)
 	}

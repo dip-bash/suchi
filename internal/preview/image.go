@@ -37,7 +37,7 @@ func Decode(data []byte) (img image.Image, format string, err error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("not a supported image: %w", err)
 	}
-	if cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width*cfg.Height > MaxPixels {
+	if cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width) > int64(MaxPixels)/int64(cfg.Height) {
 		return nil, "", errors.New("image is too large to preview")
 	}
 	img, _, err = image.Decode(bytes.NewReader(data))
@@ -77,11 +77,12 @@ func Fit(imgW, imgH, maxCols, maxRows, cellW, cellH int) (cols, rows int) {
 // Resize scales img to exactly w x h pixels, compositing transparency onto the background.
 func Resize(img image.Image, w, h int) *image.NRGBA {
 	w, h = max(w, 1), max(h, 1)
-	flat := image.NewNRGBA(img.Bounds())
-	draw.Draw(flat, flat.Bounds(), &image.Uniform{C: background}, image.Point{}, draw.Src)
-	draw.Draw(flat, flat.Bounds(), img, img.Bounds().Min, draw.Over)
 	dst := image.NewNRGBA(image.Rect(0, 0, w, h))
-	xdraw.CatmullRom.Scale(dst, dst.Bounds(), flat, flat.Bounds(), xdraw.Src, nil)
+	draw.Draw(dst, dst.Bounds(), &image.Uniform{C: background}, image.Point{}, draw.Src)
+	// Composite while scaling. The old path allocated and filled another
+	// full-resolution image before allocating the final thumbnail, doubling
+	// peak pixel memory for large photos.
+	xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Over, nil)
 	return dst
 }
 

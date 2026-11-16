@@ -36,10 +36,12 @@ type popup struct {
 	cat    preview.Category
 	meta   string
 
-	lines   []string // wrapped text, or styled detail lines
-	inner   int      // width the lines were built for
-	details func(inner int) []string
-	vp      viewport.Model
+	lines          []string // wrapped text, or styled detail lines
+	inner          int      // width the lines were built for
+	previewWidth   int      // width of an in-flight bat render
+	previewPending bool
+	details        func(inner int) []string
+	vp             viewport.Model
 
 	img          image.Image
 	imgW, imgH   int
@@ -95,7 +97,7 @@ func (m *model) openView(c clipItem) tea.Cmd {
 	if c.c.Kind == store.ClipText {
 		m.open.jump(0) // unfold
 		m.open.set(1)
-		return nil
+		return m.scheduleTextPreview()
 	}
 	m.open.jump(1)
 	return m.scheduleImage()
@@ -196,6 +198,34 @@ func (m *model) kv(inner int, pairs [][2]string) []string {
 	return out
 }
 
+type textPreviewMsg struct {
+	gen, width int
+	lines      []string
+}
+
+func (m *model) popupInnerWidth() int {
+	return max(1, max(10, min(m.w-2, 112))-4)
+}
+
+// scheduleTextPreview runs bat outside the Bubble Tea event loop. The plain
+// preview is already visible, so slow syntax detection or highlighting never
+// blocks key handling or terminal redraws.
+func (m *model) scheduleTextPreview() tea.Cmd {
+	if m.overlay != overlayView || m.pop.clip.c.Kind != store.ClipText || m.pop.text == "" {
+		return nil
+	}
+	width := m.popupInnerWidth()
+	if m.pop.previewPending && m.pop.previewWidth == width {
+		return nil
+	}
+	m.pop.previewPending = true
+	m.pop.previewWidth = width
+	text, gen := m.pop.text, m.pop.gen
+	return func() tea.Msg {
+		return textPreviewMsg{gen: gen, width: width, lines: preview.RenderText(text, width)}
+	}
+}
+
 // ensureLines (re)builds the wrapped text / detail lines for the current width.
 func (m *model) ensureLines(inner int) {
 	p := &m.pop
@@ -207,7 +237,13 @@ func (m *model) ensureLines(inner int) {
 	case p.details != nil:
 		p.lines = p.details(inner)
 	default:
-		p.lines = textutil.Wrap(p.text, inner)
+		// Keep ordinary clipboard text immediate, but don't wrap a very large
+		// paste from View: that work runs in the asynchronous preview command.
+		if len(p.text) <= 64<<10 {
+			p.lines = textutil.Wrap(p.text, inner)
+		} else {
+			p.lines = []string{"Rendering preview…"}
+		}
 	}
 	if p.imgNote != "" {
 		p.lines = append(p.lines, "", m.styles.dim.Render(m.clip(p.imgNote, inner)))
@@ -439,6 +475,9 @@ func (m *model) onResize() tea.Cmd {
 	m.pop.lines = nil // rewrap for the new width
 	wasDrawn := m.pop.drawn
 	clear := m.clearImage()
+	if m.pop.clip.c.Kind == store.ClipText {
+		return m.scheduleTextPreview()
+	}
 	if wasDrawn {
 		return tea.Sequence(clear, m.scheduleImage())
 	}

@@ -61,8 +61,10 @@ func TestDecodeRefusesDecompressionBombs(t *testing.T) {
 	var b bytes.Buffer
 	_ = png.Encode(&b, solid(2, 2, color.NRGBA{A: 255}))
 	data := b.Bytes()
-	binary.BigEndian.PutUint32(data[16:], 60000) // IHDR width
-	binary.BigEndian.PutUint32(data[20:], 60000) // IHDR height
+	// These dimensions overflow a 32-bit product; the guard must use a
+	// division check rather than multiplying width by height.
+	binary.BigEndian.PutUint32(data[16:], 3000000000) // IHDR width
+	binary.BigEndian.PutUint32(data[20:], 3000000000) // IHDR height
 	binary.BigEndian.PutUint32(data[29:], crc32.ChecksumIEEE(data[12:29]))
 	if _, _, err := Decode(data); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("want a too-large error, got %v", err)

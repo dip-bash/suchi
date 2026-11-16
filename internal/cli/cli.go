@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/dip-bash/suchi/internal/clipboard"
 	"github.com/dip-bash/suchi/internal/config"
 	"github.com/dip-bash/suchi/internal/daemon"
+	"github.com/dip-bash/suchi/internal/filebundle"
 	"github.com/dip-bash/suchi/internal/pidlock"
 	"github.com/dip-bash/suchi/internal/store"
 	"github.com/dip-bash/suchi/internal/tui"
@@ -34,9 +34,13 @@ Usage:
   suchi status          show the watcher, backend and database
   suchi add [TEXT]      add TEXT (or stdin) to the history
   suchi get NAME        print the text of a snippet
-  suchi import [FILE]   import history.json from the old Python version
   suchi clear [--all]   delete the history (pinned entries stay unless --all)
   suchi version
+
+File transfer:
+  suchi -c FILE...      copy files/directories to the CLI clipboard
+  suchi -x FILE...      cut files/directories (remove after clipboard is set)
+  suchi -p [DIR]        paste a file bundle into DIR (default: current directory)
 
 Flags (all commands):
   --db PATH         database file   (default: %s)
@@ -47,7 +51,7 @@ Flags (all commands):
   --backend         auto | wayland | x11 | tty
 
 Interface flags:
-  -p, --print       print the chosen text to stdout instead of copying it
+  --print           print the chosen text to stdout instead of copying it
   --ascii           plain ASCII glyphs (automatic on the Linux console)
   --allow-multiple  do not close an interface that is already open
 
@@ -90,8 +94,6 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = e.runAdd(cfg, rest)
 	case "get":
 		err = e.runGet(cfg, rest)
-	case "import":
-		err = e.runImport(cfg, rest)
 	case "clear":
 		err = e.runClear(cfg, rest)
 	case "version":
@@ -149,13 +151,45 @@ func signalContext() (context.Context, context.CancelFunc) {
 
 func (e env) runUI(cfg config.Config, args []string) error {
 	fs := e.flags("", &cfg)
-	var print, ascii, multiple bool
+	var print, ascii, multiple, copyFiles, cutFiles, pasteFiles bool
 	fs.BoolVar(&multiple, "allow-multiple", false, "do not close an interface that is already open")
 	fs.BoolVar(&print, "print", false, "print the chosen text")
-	fs.BoolVar(&print, "p", false, "print the chosen text")
 	fs.BoolVar(&ascii, "ascii", false, "plain ASCII glyphs")
+	fs.BoolVar(&copyFiles, "c", false, "copy files/directories to the CLI clipboard")
+	fs.BoolVar(&copyFiles, "copy", false, "copy files/directories to the CLI clipboard")
+	fs.BoolVar(&cutFiles, "x", false, "cut files/directories to the CLI clipboard")
+	fs.BoolVar(&cutFiles, "cut", false, "cut files/directories to the CLI clipboard")
+	fs.BoolVar(&pasteFiles, "p", false, "paste a CLI file bundle")
 	if err := e.parse(fs, &cfg, args); err != nil {
 		return err
+	}
+	selectedOps := 0
+	for _, selected := range []bool{copyFiles, cutFiles, pasteFiles} {
+		if selected {
+			selectedOps++
+		}
+	}
+	if selectedOps > 1 || (selectedOps > 0 && print) {
+		return fmt.Errorf("choose only one of -c, -x, -p or --print: %w", errUsage)
+	}
+	if copyFiles || cutFiles {
+		if fs.NArg() == 0 {
+			return fmt.Errorf("-c and -x need at least one file or directory: %w", errUsage)
+		}
+		return e.runFileCopy(cfg, fs.Args(), cutFiles)
+	}
+	if pasteFiles {
+		if fs.NArg() > 1 {
+			return fmt.Errorf("usage: suchi -p [DIR]: %w", errUsage)
+		}
+		destination := "."
+		if fs.NArg() == 1 {
+			destination = fs.Arg(0)
+		}
+		return e.runFilePaste(cfg, destination)
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("unexpected arguments: %s: %w", strings.Join(fs.Args(), " "), errUsage)
 	}
 	ctx, stop := signalContext()
 	defer stop()
@@ -200,11 +234,11 @@ func toItem(r tui.Result) clipboard.Item {
 }
 
 // printResult writes the chosen entry to stdout: text and file paths as
-// text, an image as raw bytes (`suchi -p > shot.png`), but never into a terminal.
+// text, an image as raw bytes (`suchi --print > shot.png`), but never into a terminal.
 func (e env) printResult(r tui.Result) error {
 	if r.Kind == store.ClipImage {
 		if f, ok := e.stdout.(*os.File); ok && isChar(f) {
-			return errors.New("refusing to print image bytes to a terminal; redirect it: suchi -p > image.png")
+			return errors.New("refusing to print image bytes to a terminal; redirect it: suchi --print > image.png")
 		}
 		_, err := e.stdout.Write(r.Data)
 		return err
@@ -372,31 +406,112 @@ func (e env) runGet(cfg config.Config, args []string) error {
 	return err
 }
 
-func (e env) runImport(cfg config.Config, args []string) error {
-	fs := e.flags("import", &cfg)
-	if err := e.parse(fs, &cfg, args); err != nil {
-		return err
-	}
-	path := fs.Arg(0)
-	if path == "" {
-		cache := os.Getenv("XDG_CACHE_HOME")
-		if cache == "" {
-			h, _ := os.UserHomeDir()
-			cache = filepath.Join(h, ".cache")
+func (e env) runFileCopy(cfg config.Config, paths []string, cut bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if cut {
+		if err := filebundle.ValidateRemoveSources(paths); err != nil {
+			return err
 		}
-		path = filepath.Join(cache, "suchi", "history.json") // the Python version's default
 	}
-	st, err := store.Open(cfg.DBPath)
+	archive, err := os.CreateTemp("", "suchi-file-bundle-*.tar.gz")
 	if err != nil {
+		return fmt.Errorf("create temporary archive: %w", err)
+	}
+	archivePath := archive.Name()
+	defer os.Remove(archivePath)
+	if err := filebundle.CreateTo(archive, paths); err != nil {
+		_ = archive.Close()
 		return err
 	}
-	defer st.Close()
-	n, err := st.ImportLegacyJSON(context.Background(), path, cfg.Limit, cfg.MaxBytes)
+	stat, err := archive.Stat()
 	if err != nil {
+		_ = archive.Close()
 		return err
 	}
-	fmt.Fprintf(e.stdout, "imported %d entries from %s\n", n, path)
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		_ = archive.Close()
+		return err
+	}
+	b, problem, err := clipboard.Detect(cfg.Backend)
+	if err != nil {
+		_ = archive.Close()
+		return err
+	}
+	if b.Name() == "tty" {
+		_ = archive.Close()
+		if problem != "" {
+			return fmt.Errorf("no graphical clipboard available (%s)", problem)
+		}
+		return errors.New("file bundles require an X11 or Wayland clipboard")
+	}
+	if err := clipboard.SetFileBundleReader(ctx, b, archive); err != nil {
+		_ = archive.Close()
+		return err
+	}
+	if err := archive.Close(); err != nil {
+		return err
+	}
+	if cut {
+		if err := filebundle.RemoveSources(paths); err != nil {
+			return fmt.Errorf("file bundle is on the clipboard, but source removal failed: %w", err)
+		}
+	}
+	action := "copied"
+	if cut {
+		action = "cut"
+	}
+	fmt.Fprintf(e.stdout, "%s %d path(s) (%s) to the file-transfer clipboard\n", action, len(paths), humanBytes(stat.Size()))
 	return nil
+}
+
+func (e env) runFilePaste(cfg config.Config, destination string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	b, problem, err := clipboard.Detect(cfg.Backend)
+	if err != nil {
+		return err
+	}
+	if b.Name() == "tty" {
+		if problem != "" {
+			return fmt.Errorf("no graphical clipboard available (%s)", problem)
+		}
+		return errors.New("file bundles require an X11 or Wayland clipboard")
+	}
+	archive, err := os.CreateTemp("", "suchi-file-bundle-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("create temporary archive: %w", err)
+	}
+	archivePath := archive.Name()
+	defer os.Remove(archivePath)
+	if err := clipboard.ReadFileBundleTo(ctx, b, archive); err != nil {
+		_ = archive.Close()
+		return err
+	}
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		_ = archive.Close()
+		return err
+	}
+	names, err := filebundle.ExtractReader(archive, destination)
+	_ = archive.Close()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(e.stdout, "pasted %d item(s) into %s: %s\n", len(names), destination, strings.Join(names, ", "))
+	return nil
+}
+
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func (e env) runClear(cfg config.Config, args []string) error {
