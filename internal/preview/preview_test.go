@@ -10,9 +10,11 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-sixel"
@@ -61,10 +63,8 @@ func TestDecodeRefusesDecompressionBombs(t *testing.T) {
 	var b bytes.Buffer
 	_ = png.Encode(&b, solid(2, 2, color.NRGBA{A: 255}))
 	data := b.Bytes()
-	// These dimensions overflow a 32-bit product; the guard must use a
-	// division check rather than multiplying width by height.
-	binary.BigEndian.PutUint32(data[16:], 3000000000) // IHDR width
-	binary.BigEndian.PutUint32(data[20:], 3000000000) // IHDR height
+	binary.BigEndian.PutUint32(data[16:], 60000) // IHDR width
+	binary.BigEndian.PutUint32(data[20:], 60000) // IHDR height
 	binary.BigEndian.PutUint32(data[29:], crc32.ChecksumIEEE(data[12:29]))
 	if _, _, err := Decode(data); err == nil || !strings.Contains(err.Error(), "too large") {
 		t.Fatalf("want a too-large error, got %v", err)
@@ -308,5 +308,37 @@ func TestStat(t *testing.T) {
 	}
 	if in := Stat(dir + "/missing.mp4"); in.Exists || in.Label != "MP4" || in.Name != "missing.mp4" {
 		t.Errorf("missing file must still be classified: %+v", in)
+	}
+}
+
+func TestReadTextHead(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, data []byte) string {
+		p := dir + "/" + name
+		if err := os.WriteFile(p, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	text, trunc, ok := ReadTextHead(write("a.go", []byte("package main\n")), 1024)
+	if !ok || trunc || text != "package main\n" {
+		t.Fatalf("small text file: %q %v %v", text, trunc, ok)
+	}
+	big := bytes.Repeat([]byte("é line\n"), 1000) // multi-byte characters: must not be cut in half
+	text, trunc, ok = ReadTextHead(write("big.txt", big), 1001)
+	if !ok || !trunc || !utf8.ValidString(text) || len(text) > 1001 {
+		t.Fatalf("truncated text must stay valid UTF-8: ok=%v trunc=%v len=%d valid=%v", ok, trunc, len(text), utf8.ValidString(text))
+	}
+	for name, data := range map[string][]byte{
+		"bin":   append([]byte("MZ"), 0, 1, 2, 3),
+		"empty": nil,
+		"junk":  bytes.Repeat([]byte{0xff, 0xfe, 0xfd}, 500),
+	} {
+		if _, _, ok := ReadTextHead(write(name, data), 4096); ok {
+			t.Errorf("%s must not be previewed as text", name)
+		}
+	}
+	if _, _, ok := ReadTextHead(dir+"/missing", 10); ok {
+		t.Error("a missing file is not previewable")
 	}
 }

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image"
 	"io"
-	"math"
 	"os"
 	"strings"
 	"time"
@@ -15,13 +14,16 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	zone "github.com/lrstanley/bubblezone"
 
+	"github.com/dip-bash/suchi/internal/highlight"
 	"github.com/dip-bash/suchi/internal/preview"
 	"github.com/dip-bash/suchi/internal/store"
-	"github.com/dip-bash/suchi/internal/textutil"
 )
 
-// maxPreviewFile is the biggest image file read from disk for a preview.
-const maxPreviewFile = 32 << 20
+// Limits for previews of copied files.
+const (
+	maxPreviewFile = 32 << 20  // largest image file decoded
+	maxTextPreview = 256 << 10 // text read from the start of a text file
+)
 
 type drawImageMsg struct{ gen int }
 
@@ -36,12 +38,12 @@ type popup struct {
 	cat    preview.Category
 	meta   string
 
-	lines          []string // wrapped text, or styled detail lines
-	inner          int      // width the lines were built for
-	previewWidth   int      // width of an in-flight bat render
-	previewPending bool
-	details        func(inner int) []string
-	vp             viewport.Model
+	lang    highlight.Lang
+	lines   []string // highlighted text, or styled detail lines
+	inner   int      // width the lines were built for
+	details func(inner int) []string
+	extra   func(inner int) []string // file contents shown under the details
+	vp      viewport.Model
 
 	img          image.Image
 	imgW, imgH   int
@@ -89,17 +91,20 @@ func (m *model) openView(c clipItem) tea.Cmd {
 			return nil
 		}
 		p.text, p.length = text, len([]rune(text))
+		p.lang = highlight.Detect("", text)
+		p.label = p.lang.Badge() // PYTHON, JSON, BASH... or TEXT
+		if p.lang.Known() {
+			p.cat = preview.CatCode
+		}
 		p.title = "Clipboard text"
-		p.meta = commas(p.length) + " characters"
+		lines := strings.Count(strings.TrimSuffix(text, "\n"), "\n") + 1
+		p.meta = fmt.Sprintf("%s %s %s characters", plural(lines, "line"), m.g.dot, commas(p.length))
 	}
 	m.pop = p
 	m.overlay = overlayView
 	if c.c.Kind == store.ClipText {
-		m.open.jump(0) // unfold
-		m.open.set(1)
-		return m.scheduleTextPreview()
+		return nil
 	}
-	m.open.jump(1)
 	return m.scheduleImage()
 }
 
@@ -164,12 +169,31 @@ func (m *model) buildFilesPopup(p *popup, c clipItem) {
 		}
 		return out
 	}
-	// Preview the first file when it is a picture we can draw.
-	if in := infos[0]; in.Exists && !in.IsDir && preview.DecodableImage(in.Path) {
-		if in.Size > maxPreviewFile {
-			p.imgNote = "picture too large to preview"
-		} else if data, err := os.ReadFile(in.Path); err == nil {
-			m.loadPicture(p, data)
+	// Preview the first file: a picture we can draw, or the start of a text
+	// file with syntax highlighting and line numbers (like bat).
+	if in := infos[0]; in.Exists && !in.IsDir {
+		switch {
+		case preview.DecodableImage(in.Path):
+			if in.Size > maxPreviewFile {
+				p.imgNote = "picture too large to preview"
+			} else if data, err := os.ReadFile(in.Path); err == nil {
+				m.loadPicture(p, data)
+			}
+		default:
+			if text, truncated, ok := preview.ReadTextHead(in.Path, maxTextPreview); ok {
+				lang := highlight.Detect(in.Path, text)
+				p.extra = func(inner int) []string {
+					title := in.Name
+					if lang.Known() {
+						title += " " + m.g.dot + " " + lang.Name()
+					}
+					if truncated {
+						title += " " + m.g.dot + " first " + preview.HumanSize(maxTextPreview)
+					}
+					out := []string{"", m.styles.dim.Render(m.clip(strings.Repeat(m.g.rule, 2)+" "+title+" ", inner))}
+					return append(out, m.highlighted(text, lang, inner).Lines...)
+				}
+			}
 		}
 	}
 }
@@ -198,34 +222,6 @@ func (m *model) kv(inner int, pairs [][2]string) []string {
 	return out
 }
 
-type textPreviewMsg struct {
-	gen, width int
-	lines      []string
-}
-
-func (m *model) popupInnerWidth() int {
-	return max(1, max(10, min(m.w-2, 112))-4)
-}
-
-// scheduleTextPreview runs bat outside the Bubble Tea event loop. The plain
-// preview is already visible, so slow syntax detection or highlighting never
-// blocks key handling or terminal redraws.
-func (m *model) scheduleTextPreview() tea.Cmd {
-	if m.overlay != overlayView || m.pop.clip.c.Kind != store.ClipText || m.pop.text == "" {
-		return nil
-	}
-	width := m.popupInnerWidth()
-	if m.pop.previewPending && m.pop.previewWidth == width {
-		return nil
-	}
-	m.pop.previewPending = true
-	m.pop.previewWidth = width
-	text, gen := m.pop.text, m.pop.gen
-	return func() tea.Msg {
-		return textPreviewMsg{gen: gen, width: width, lines: preview.RenderText(text, width)}
-	}
-}
-
 // ensureLines (re)builds the wrapped text / detail lines for the current width.
 func (m *model) ensureLines(inner int) {
 	p := &m.pop
@@ -236,20 +232,31 @@ func (m *model) ensureLines(inner int) {
 	switch {
 	case p.details != nil:
 		p.lines = p.details(inner)
-	default:
-		// Keep ordinary clipboard text immediate, but don't wrap a very large
-		// paste from View: that work runs in the asynchronous preview command.
-		if len(p.text) <= 64<<10 {
-			p.lines = textutil.Wrap(p.text, inner)
-		} else {
-			p.lines = []string{"Rendering preview…"}
+		if p.extra != nil {
+			p.lines = append(p.lines, p.extra(inner)...)
 		}
+	default:
+		p.lines = m.highlighted(p.text, p.lang, inner).Lines
 	}
 	if p.imgNote != "" {
 		p.lines = append(p.lines, "", m.styles.dim.Render(m.clip(p.imgNote, inner)))
 	}
 	p.vp.Width = inner
 	p.vp.SetContent(strings.Join(p.lines, "\n"))
+}
+
+// highlighted renders text bat-style: syntax colours and a line-number gutter.
+func (m *model) highlighted(text string, lang highlight.Lang, width int) highlight.Result {
+	return highlight.Render(text, lang, highlight.Options{
+		Width: width, LineNumbers: true, ASCII: m.g.rule == "-", GutterStyle: m.styles.dim,
+	})
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, word)
+	}
+	return fmt.Sprintf("%d %ss", n, word)
 }
 
 // cellPixels is the pixel size of one cell for fitting pictures.
@@ -286,9 +293,6 @@ func (m *model) popLayout() popLayout {
 		}
 	}
 	l.vpH = max(1, min(n, bodyMax-body))
-	if m.overlay == overlayView && m.pop.clip.c.Kind == store.ClipText {
-		l.vpH = max(1, int(math.Round(float64(l.vpH)*math.Min(1, math.Max(0, m.open.pos)))))
-	}
 	body += l.vpH
 	l.boxH = body + 5 + l.spacer
 	l.x0 = max(0, (m.w-l.boxW)/2)
@@ -475,9 +479,6 @@ func (m *model) onResize() tea.Cmd {
 	m.pop.lines = nil // rewrap for the new width
 	wasDrawn := m.pop.drawn
 	clear := m.clearImage()
-	if m.pop.clip.c.Kind == store.ClipText {
-		return m.scheduleTextPreview()
-	}
 	if wasDrawn {
 		return tea.Sequence(clear, m.scheduleImage())
 	}

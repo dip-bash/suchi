@@ -16,7 +16,7 @@ func TestDefaultsFollowXDG(t *testing.T) {
 		c.LogPath() != filepath.Join("/state", "suchi", "suchi.log") {
 		t.Fatalf("got %+v", c)
 	}
-	if c.Limit != DefaultLimit || c.MaxBytes != DefaultMaxBytes || c.Selection != "clipboard" || c.Backend != "auto" {
+	if c.Limit != DefaultLimit || c.MaxBytes != DefaultMaxBytes || c.Backend != "auto" {
 		t.Fatalf("got %+v", c)
 	}
 }
@@ -37,10 +37,9 @@ func TestValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, mutate := range map[string]func(*Config){
-		"selection": func(c *Config) { c.Selection = "x" },
-		"backend":   func(c *Config) { c.Backend = "x" },
-		"limit":     func(c *Config) { c.Limit = 0 },
-		"max-size":  func(c *Config) { c.MaxBytes = 0 },
+		"backend":  func(c *Config) { c.Backend = "x" },
+		"limit":    func(c *Config) { c.Limit = 0 },
+		"max-size": func(c *Config) { c.MaxBytes = 0 },
 	} {
 		c := good
 		mutate(&c)

@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -123,8 +124,9 @@ type model struct {
 	armed      armed      // the entry waiting for a second "d" to be deleted
 	undo       []undoItem // deleted entries, newest last, restorable with "u" until suchi closes
 
-	pill, scroll, open spring
-	frameRunning       bool
+	pill, scroll spring
+
+	frameRunning bool
 
 	lastClickID string
 	lastClickAt time.Time
@@ -132,6 +134,10 @@ type model struct {
 	proto        preview.Protocol
 	cellW, cellH int
 	out          io.Writer // where graphics escape sequences go (the terminal)
+
+	// execing is true while a command snippet owns the terminal; signal
+	// handling reads it from another goroutine.
+	execing atomic.Bool
 
 	result Result
 }
@@ -144,7 +150,11 @@ func newModel(ctx context.Context, st *store.Store, opts Options) *model {
 	}
 	m := &model{ctx: ctx, st: st, styles: newStyles(), g: g, w: 80, h: 24,
 		proto: opts.Protocol, cellW: 8, cellH: 16, out: opts.Out}
-	m.pill, m.scroll, m.open = newAnimations()
+	m.pill, m.scroll = newAnimations()
+	if opts.Snips {
+		m.tab = tabSnips
+		m.pill.jump(float64(tabStart(tabSnips)))
+	}
 	m.dataVer, _ = st.DataVersion(ctx)
 	m.reload()
 	return m
@@ -323,7 +333,7 @@ func (m *model) syncAnim() {
 }
 
 func (m *model) animating() bool {
-	return !m.pill.settled() || !m.scroll.settled() || !m.open.settled()
+	return !m.pill.settled() || !m.scroll.settled()
 }
 
 // kick starts the 60 fps frame loop if something is animating and it is not already running.
@@ -341,7 +351,6 @@ func (m *model) settle() {
 	for i := 0; i < 600 && m.animating(); i++ {
 		m.pill.step()
 		m.scroll.step()
-		m.open.step()
 	}
 }
 

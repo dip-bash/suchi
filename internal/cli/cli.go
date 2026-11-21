@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -18,7 +19,7 @@ import (
 	"github.com/dip-bash/suchi/internal/clipboard"
 	"github.com/dip-bash/suchi/internal/config"
 	"github.com/dip-bash/suchi/internal/daemon"
-	"github.com/dip-bash/suchi/internal/filebundle"
+	"github.com/dip-bash/suchi/internal/fileop"
 	"github.com/dip-bash/suchi/internal/pidlock"
 	"github.com/dip-bash/suchi/internal/store"
 	"github.com/dip-bash/suchi/internal/tui"
@@ -29,31 +30,35 @@ const usage = `suchi - clipboard history and snippets for the terminal
 
 Usage:
   suchi [flags]         open the interface (Tab switches Clipboard / Snippets)
+  suchi -s              open the interface on the Snippets tab
+  suchi -c PATH...      copy files/folders to the clipboard and history
+  suchi -x PATH...      cut files/folders to the clipboard and history
+  suchi -p              paste the clipboard's files into the current directory
   suchi daemon          start the background clipboard watcher
   suchi stop            stop the watcher
   suchi status          show the watcher, backend and database
   suchi add [TEXT]      add TEXT (or stdin) to the history
   suchi get NAME        print the text of a snippet
+  suchi import [FILE]   import history.json from the old Python version
   suchi clear [--all]   delete the history (pinned entries stay unless --all)
   suchi version
-
-File transfer:
-  suchi -c FILE...      copy files/directories to the CLI clipboard
-  suchi -x FILE...      cut files/directories (remove after clipboard is set)
-  suchi -p [DIR]        paste a file bundle into DIR (default: current directory)
 
 Flags (all commands):
   --db PATH         database file   (default: %s)
   --limit N         history size    (default: %d)
   --max-size BYTES  skip bigger clipboard text (default: %d)
   --max-media BYTES skip bigger images (default: 16 MiB)
-  -s, --selection   clipboard | primary
   --backend         auto | wayland | x11 | tty
 
 Interface flags:
-  --print           print the chosen text to stdout instead of copying it
-  --ascii           plain ASCII glyphs (automatic on the Linux console)
+  -s, --selection   open the Snippets tab
   --allow-multiple  do not close an interface that is already open
+
+File clipboard:
+  -c, --copy PATH... copy files/folders
+  -x, --cut PATH...  cut files/folders
+  -p, --paste        paste files/folders into the current directory
+                     (text is printed; image bytes go to stdout when redirected)
 
 Only one suchi interface runs at a time: opening a new one closes the previous
 one, so a key binding like "footclient -W 80x30 suchi" never piles up windows.
@@ -83,7 +88,7 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var err error
 	switch cmd {
 	case "":
-		err = e.runUI(cfg, rest)
+		err = e.runUI(cfg, rest, false)
 	case "daemon":
 		err = e.runDaemon(cfg, rest)
 	case "stop":
@@ -94,6 +99,8 @@ func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		err = e.runAdd(cfg, rest)
 	case "get":
 		err = e.runGet(cfg, rest)
+	case "import":
+		err = e.runImport(cfg, rest)
 	case "clear":
 		err = e.runClear(cfg, rest)
 	case "version":
@@ -129,8 +136,6 @@ func (e env) flags(name string, cfg *config.Config) *flag.FlagSet {
 	fs.IntVar(&cfg.Limit, "limit", cfg.Limit, "history size")
 	fs.IntVar(&cfg.MaxBytes, "max-size", cfg.MaxBytes, "skip bigger clipboard text")
 	fs.IntVar(&cfg.MaxMedia, "max-media", cfg.MaxMedia, "skip bigger images")
-	fs.StringVar(&cfg.Selection, "selection", cfg.Selection, "clipboard | primary")
-	fs.StringVar(&cfg.Selection, "s", cfg.Selection, "clipboard | primary")
 	fs.StringVar(&cfg.Backend, "backend", cfg.Backend, "auto | wayland | x11 | tty")
 	return fs
 }
@@ -149,95 +154,74 @@ func signalContext() (context.Context, context.CancelFunc) {
 	return signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 }
 
-func (e env) runUI(cfg config.Config, args []string) error {
+func (e env) runUI(cfg config.Config, args []string, print bool) error {
 	fs := e.flags("", &cfg)
-	var print, ascii, multiple, copyFiles, cutFiles, pasteFiles bool
+	var multiple, copyPaths, cutPaths, paste, snip bool
 	fs.BoolVar(&multiple, "allow-multiple", false, "do not close an interface that is already open")
-	fs.BoolVar(&print, "print", false, "print the chosen text")
-	fs.BoolVar(&ascii, "ascii", false, "plain ASCII glyphs")
-	fs.BoolVar(&copyFiles, "c", false, "copy files/directories to the CLI clipboard")
-	fs.BoolVar(&copyFiles, "copy", false, "copy files/directories to the CLI clipboard")
-	fs.BoolVar(&cutFiles, "x", false, "cut files/directories to the CLI clipboard")
-	fs.BoolVar(&cutFiles, "cut", false, "cut files/directories to the CLI clipboard")
-	fs.BoolVar(&pasteFiles, "p", false, "paste a CLI file bundle")
+	fs.BoolVar(&copyPaths, "c", false, "copy files/folders to the clipboard")
+	fs.BoolVar(&copyPaths, "copy", false, "copy files/folders to the clipboard")
+	fs.BoolVar(&cutPaths, "x", false, "cut files/folders to the clipboard")
+	fs.BoolVar(&cutPaths, "cut", false, "cut files/folders to the clipboard")
+	fs.BoolVar(&paste, "p", false, "paste files/folders from the clipboard")
+	fs.BoolVar(&paste, "paste", false, "paste files/folders from the clipboard")
+	fs.BoolVar(&snip, "s", false, "open the Snippets tab")
+	fs.BoolVar(&snip, "selection", false, "open the Snippets tab")
 	if err := e.parse(fs, &cfg, args); err != nil {
 		return err
 	}
-	selectedOps := 0
-	for _, selected := range []bool{copyFiles, cutFiles, pasteFiles} {
-		if selected {
-			selectedOps++
+
+	switch {
+	case copyPaths && cutPaths:
+		return errors.New("choose either -c/--copy or -x/--cut")
+	case copyPaths:
+		if paste || snip {
+			return errors.New("cannot combine -c/--copy with -p or -s")
 		}
-	}
-	if selectedOps > 1 || (selectedOps > 0 && print) {
-		return fmt.Errorf("choose only one of -c, -x, -p or --print: %w", errUsage)
-	}
-	if copyFiles || cutFiles {
-		if fs.NArg() == 0 {
-			return fmt.Errorf("-c and -x need at least one file or directory: %w", errUsage)
+		return e.runFileAction(cfg, fs.Args(), false)
+	case cutPaths:
+		if paste || snip {
+			return errors.New("cannot combine -x/--cut with -p or -s")
 		}
-		return e.runFileCopy(cfg, fs.Args(), cutFiles)
-	}
-	if pasteFiles {
-		if fs.NArg() > 1 {
-			return fmt.Errorf("usage: suchi -p [DIR]: %w", errUsage)
+		return e.runFileAction(cfg, fs.Args(), true)
+	case paste:
+		if snip {
+			return errors.New("cannot combine -p/--paste with -s")
 		}
-		destination := "."
-		if fs.NArg() == 1 {
-			destination = fs.Arg(0)
-		}
-		return e.runFilePaste(cfg, destination)
+		return e.runPaste(cfg, fs.Args())
 	}
-	if fs.NArg() != 0 {
-		return fmt.Errorf("unexpected arguments: %s: %w", strings.Join(fs.Args(), " "), errUsage)
+	if fs.NArg() > 0 {
+		return fmt.Errorf("unexpected argument %q", fs.Arg(0))
 	}
+
 	ctx, stop := signalContext()
 	defer stop()
 
-	var uiLock *pidlock.Lock
 	if !multiple {
 		// Newest window wins: ask the interface that is already open to close.
-		var lockErr error
-		uiLock, lockErr = pidlock.Takeover(ctx, cfg.UIPIDPath(), 3*time.Second)
-		if lockErr != nil {
-			return lockErr
+		lock, err := pidlock.Takeover(ctx, cfg.UIPIDPath(), 3*time.Second)
+		if err != nil {
+			return err
 		}
-		// Keep a fallback release for every early return, but release it as soon
-		// as the TUI and its database are closed (before clipboard delivery).
-		defer func() {
-			if uiLock != nil {
-				uiLock.Release()
-			}
-		}()
+		defer lock.Release()
 	}
 
 	st, err := store.Open(cfg.DBPath)
 	if err != nil {
 		return err
 	}
-	res, runErr := tui.Run(ctx, st, tui.Options{ASCII: ascii})
-	closeErr := st.Close()
-	if uiLock != nil {
-		uiLock.Release()
-		uiLock = nil
-	}
-	if runErr != nil {
-		return runErr
-	}
-	if closeErr != nil {
-		return closeErr
-	}
-	if !res.Chosen {
-		return nil
+	res, err := tui.Run(ctx, st, tui.Options{Snips: snip})
+	_ = st.Close()
+	if err != nil || !res.Chosen {
+		return err
 	}
 	if print {
-		return e.printResult(res)
+		return e.printItem(toItem(res))
 	}
 	b, problem, err := clipboard.Detect(cfg.Backend)
 	if err != nil {
 		return err
 	}
-	return clipboard.Deliver(ctx, b, problem, toItem(res), clipboard.Selection(cfg.Selection), e.stdout, e.stderr)
+	return clipboard.Deliver(ctx, b, problem, toItem(res), clipboard.Clipboard, e.stdout, e.stderr)
 }
 
 // toItem converts the interface's result into a clipboard item.
@@ -251,17 +235,122 @@ func toItem(r tui.Result) clipboard.Item {
 	return clipboard.Item{Kind: clipboard.KindText, Text: r.Text}
 }
 
-// printResult writes the chosen entry to stdout: text and file paths as
-// text, an image as raw bytes (`suchi --print > shot.png`), but never into a terminal.
-func (e env) printResult(r tui.Result) error {
-	if r.Kind == store.ClipImage {
-		if f, ok := e.stdout.(*os.File); ok && isChar(f) {
-			return errors.New("refusing to print image bytes to a terminal; redirect it: suchi --print > image.png")
+// runFileAction records files/folders in the history and puts them on the
+// clipboard, marked as a copy or a cut.
+func (e env) runFileAction(cfg config.Config, args []string, cut bool) error {
+	if len(args) == 0 {
+		return errors.New("usage: suchi -c|-x PATH...")
+	}
+	paths := make([]string, 0, len(args))
+	seen := make(map[string]bool, len(args))
+	for _, p := range args {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return err
 		}
-		_, err := e.stdout.Write(r.Data)
+		if strings.ContainsAny(abs, "\n\r") {
+			return fmt.Errorf("path contains a newline: %q", p)
+		}
+		if seen[abs] {
+			continue
+		}
+		seen[abs] = true
+		if _, err := os.Lstat(abs); err != nil {
+			return fmt.Errorf("%s: %w", p, err)
+		}
+		paths = append(paths, abs)
+	}
+	text := strings.Join(paths, "\n")
+	ctx, stop := signalContext()
+	defer stop()
+
+	st, err := store.Open(cfg.DBPath)
+	if err != nil {
 		return err
 	}
-	_, err := io.WriteString(e.stdout, r.Text)
+	defer st.Close()
+	added, err := st.AddItem(ctx, store.NewClip{Kind: store.ClipFile, Text: text, Mime: "text/uri-list"},
+		store.Limits{Count: cfg.Limit, MaxText: cfg.MaxBytes})
+	if err != nil {
+		return err
+	}
+	if !added {
+		return errors.New("nothing added (the path list is too large)")
+	}
+
+	it := clipboard.Item{Kind: clipboard.KindFiles, Text: text, MIME: "text/uri-list", Cut: cut}
+	b, problem, err := clipboard.Detect(cfg.Backend)
+	if err != nil {
+		return fmt.Errorf("saved to history, but could not set the clipboard: %w", err)
+	}
+	if err := b.Set(ctx, it, clipboard.Clipboard); err != nil {
+		if problem != "" {
+			fmt.Fprintf(e.stderr, "suchi: %s\n", problem)
+		}
+		fmt.Fprintf(e.stderr, "suchi: saved to history, but could not set the clipboard: %v\n", err)
+	}
+	verb := "copied"
+	if cut {
+		verb = "cut"
+	}
+	fmt.Fprintf(e.stdout, "%s %d item(s)\n", verb, len(paths))
+	return nil
+}
+
+// runPaste puts the clipboard's files into the current directory. Text is
+// printed and image bytes go to stdout, so `suchi -p` remains useful outside
+// a graphical session.
+func (e env) runPaste(cfg config.Config, args []string) error {
+	if len(args) > 0 {
+		return fmt.Errorf("usage: suchi -p")
+	}
+	ctx, stop := signalContext()
+	defer stop()
+
+	b, problem, err := clipboard.Detect(cfg.Backend)
+	if err != nil {
+		return err
+	}
+	it, ok, err := b.Read(ctx, clipboard.Clipboard, clipboard.Limits{MaxText: cfg.MaxBytes, MaxMedia: cfg.MaxMedia})
+	if err != nil {
+		if errors.Is(err, clipboard.ErrNoClipboard) {
+			if e.hasTerminal() {
+				return e.runUI(cfg, nil, true) // a TTY has no clipboard: pick and print
+			}
+			return errors.New("no clipboard available here; nothing to paste")
+		}
+		return err
+	}
+	if !ok {
+		if e.hasTerminal() {
+			return e.runUI(cfg, nil, true)
+		}
+		if problem != "" {
+			return fmt.Errorf("%s: nothing to paste", problem)
+		}
+		return errors.New("nothing to paste")
+	}
+	if it.Kind != clipboard.KindFiles {
+		return e.printItem(it)
+	}
+	dests, err := fileop.Paste(it.Paths(), ".", it.Cut)
+	for _, dst := range dests {
+		fmt.Fprintln(e.stdout, dst)
+	}
+	return err
+}
+
+// printItem writes text or image bytes to stdout. Image bytes are refused on
+// a terminal so they can never corrupt the screen.
+func (e env) printItem(it clipboard.Item) error {
+	if it.Kind == clipboard.KindImage {
+		if f, ok := e.stdout.(*os.File); ok && isChar(f) {
+			return errors.New("refusing to print image bytes to a terminal; redirect it: suchi -p > image.png")
+		}
+		_, err := e.stdout.Write(it.Data)
+		return err
+	}
+	_, err := io.WriteString(e.stdout, it.Text)
 	return err
 }
 
@@ -284,7 +373,7 @@ func (e env) runDaemon(cfg config.Config, args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(e.stdout, "suchi daemon started (pid %d, %s backend, watching %s)\n", pid, b.Name(), cfg.Selection)
+		fmt.Fprintf(e.stdout, "suchi daemon started (pid %d, %s backend)\n", pid, b.Name())
 		return nil
 	}
 
@@ -424,112 +513,31 @@ func (e env) runGet(cfg config.Config, args []string) error {
 	return err
 }
 
-func (e env) runFileCopy(cfg config.Config, paths []string, cut bool) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	if cut {
-		if err := filebundle.ValidateRemoveSources(paths); err != nil {
-			return err
+func (e env) runImport(cfg config.Config, args []string) error {
+	fs := e.flags("import", &cfg)
+	if err := e.parse(fs, &cfg, args); err != nil {
+		return err
+	}
+	path := fs.Arg(0)
+	if path == "" {
+		cache := os.Getenv("XDG_CACHE_HOME")
+		if cache == "" {
+			h, _ := os.UserHomeDir()
+			cache = filepath.Join(h, ".cache")
 		}
+		path = filepath.Join(cache, "suchi", "history.json") // the Python version's default
 	}
-	archive, err := os.CreateTemp("", "suchi-file-bundle-*.tar.gz")
+	st, err := store.Open(cfg.DBPath)
 	if err != nil {
-		return fmt.Errorf("create temporary archive: %w", err)
-	}
-	archivePath := archive.Name()
-	defer os.Remove(archivePath)
-	if err := filebundle.CreateTo(archive, paths); err != nil {
-		_ = archive.Close()
 		return err
 	}
-	stat, err := archive.Stat()
+	defer st.Close()
+	n, err := st.ImportLegacyJSON(context.Background(), path, cfg.Limit, cfg.MaxBytes)
 	if err != nil {
-		_ = archive.Close()
 		return err
 	}
-	if _, err := archive.Seek(0, io.SeekStart); err != nil {
-		_ = archive.Close()
-		return err
-	}
-	b, problem, err := clipboard.Detect(cfg.Backend)
-	if err != nil {
-		_ = archive.Close()
-		return err
-	}
-	if b.Name() == "tty" {
-		_ = archive.Close()
-		if problem != "" {
-			return fmt.Errorf("no graphical clipboard available (%s)", problem)
-		}
-		return errors.New("file bundles require an X11 or Wayland clipboard")
-	}
-	if err := clipboard.SetFileBundleReader(ctx, b, archive); err != nil {
-		_ = archive.Close()
-		return err
-	}
-	if err := archive.Close(); err != nil {
-		return err
-	}
-	if cut {
-		if err := filebundle.RemoveSources(paths); err != nil {
-			return fmt.Errorf("file bundle is on the clipboard, but source removal failed: %w", err)
-		}
-	}
-	action := "copied"
-	if cut {
-		action = "cut"
-	}
-	fmt.Fprintf(e.stdout, "%s %d path(s) (%s) to the file-transfer clipboard\n", action, len(paths), humanBytes(stat.Size()))
+	fmt.Fprintf(e.stdout, "imported %d entries from %s\n", n, path)
 	return nil
-}
-
-func (e env) runFilePaste(cfg config.Config, destination string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-	b, problem, err := clipboard.Detect(cfg.Backend)
-	if err != nil {
-		return err
-	}
-	if b.Name() == "tty" {
-		if problem != "" {
-			return fmt.Errorf("no graphical clipboard available (%s)", problem)
-		}
-		return errors.New("file bundles require an X11 or Wayland clipboard")
-	}
-	archive, err := os.CreateTemp("", "suchi-file-bundle-*.tar.gz")
-	if err != nil {
-		return fmt.Errorf("create temporary archive: %w", err)
-	}
-	archivePath := archive.Name()
-	defer os.Remove(archivePath)
-	if err := clipboard.ReadFileBundleTo(ctx, b, archive); err != nil {
-		_ = archive.Close()
-		return err
-	}
-	if _, err := archive.Seek(0, io.SeekStart); err != nil {
-		_ = archive.Close()
-		return err
-	}
-	names, err := filebundle.ExtractReader(archive, destination)
-	_ = archive.Close()
-	if err != nil {
-		return err
-	}
-	fmt.Fprintf(e.stdout, "pasted %d item(s) into %s: %s\n", len(names), destination, strings.Join(names, ", "))
-	return nil
-}
-
-func humanBytes(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for v := n / unit; v >= unit; v /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }
 
 func (e env) runClear(cfg config.Config, args []string) error {
@@ -574,6 +582,11 @@ func (e env) runServe(args []string) error {
 	ctx, stop := signalContext()
 	defer stop()
 	return clipboard.ServeSelection(ctx, sel, e.stdin, e.stdout)
+}
+
+func (e env) hasTerminal() bool {
+	f, ok := e.stdin.(*os.File)
+	return ok && isChar(f)
 }
 
 func isChar(f *os.File) bool {

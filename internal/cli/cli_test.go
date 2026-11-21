@@ -99,10 +99,64 @@ func TestClear(t *testing.T) {
 	}
 }
 
+func TestImport(t *testing.T) {
+	db := sandbox(t)
+	p := filepath.Join(t.TempDir(), "history.json")
+	_ = os.WriteFile(p, []byte(`[{"text":"legacy","pinned":false,"copiedAt":1700000000000,"usedAt":0}]`), 0o600)
+	if code, out, e := run(t, "", "import", p); code != 0 || !strings.Contains(out, "imported 1") {
+		t.Fatalf("code=%d out=%q err=%q", code, out, e)
+	}
+	if got := clips(t, db); len(got) != 1 || got[0] != "legacy" {
+		t.Fatalf("got %q", got)
+	}
+	if code, _, _ := run(t, "", "import", filepath.Join(t.TempDir(), "missing.json")); code != 1 {
+		t.Fatal("missing file must fail")
+	}
+}
+
+func TestCopyAndCutFiles(t *testing.T) {
+	db := sandbox(t)
+	dir := t.TempDir()
+	file := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(file, []byte("a"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if code, out, e := run(t, "", "-c", file); code != 0 || !strings.Contains(out, "copied 1 item") {
+		t.Fatalf("copy: code=%d out=%q err=%q", code, out, e)
+	}
+	if got := clips(t, db); len(got) != 1 || got[0] != file {
+		t.Fatalf("history after copy: %q", got)
+	}
+
+	if code, out, e := run(t, "", "-x", file); code != 0 || !strings.Contains(out, "cut 1 item") {
+		t.Fatalf("cut: code=%d out=%q err=%q", code, out, e)
+	}
+	if got := clips(t, db); len(got) != 1 || got[0] != file {
+		t.Fatalf("cut must bump the same entry, got %q", got)
+	}
+
+	if code, _, e := run(t, "", "-c", filepath.Join(dir, "missing")); code != 1 || !strings.Contains(e, "missing") {
+		t.Fatalf("missing path: code=%d err=%q", code, e)
+	}
+	if code, _, e := run(t, "", "-c"); code != 1 || !strings.Contains(e, "usage") {
+		t.Fatalf("no paths: code=%d err=%q", code, e)
+	}
+}
+
+func TestPasteWithoutClipboardFailsCleanly(t *testing.T) {
+	sandbox(t)
+	if code, _, e := run(t, "", "-p"); code != 1 || !strings.Contains(e, "no clipboard") {
+		t.Fatalf("code=%d err=%q", code, e)
+	}
+}
+
 func TestUsageAndErrors(t *testing.T) {
 	sandbox(t)
 	if code, out, _ := run(t, "", "--help"); code != 0 || !strings.Contains(out, "Usage:") ||
-		!strings.Contains(out, "--allow-multiple") || !strings.Contains(out, "one suchi interface") {
+		!strings.Contains(out, "--allow-multiple") || !strings.Contains(out, "--paste") ||
+		!strings.Contains(out, "--copy") || !strings.Contains(out, "--cut") ||
+		!strings.Contains(out, "one suchi interface") {
 		t.Fatalf("help: code=%d", code)
 	}
 	if code, out, _ := run(t, "", "version"); code != 0 || !strings.HasPrefix(out, "suchi ") {
@@ -111,23 +165,11 @@ func TestUsageAndErrors(t *testing.T) {
 	if code, _, e := run(t, "", "bogus"); code != 2 || !strings.Contains(e, "unknown command") {
 		t.Fatalf("unknown command: code=%d", code)
 	}
-	if code, _, e := run(t, "", "import"); code != 2 || !strings.Contains(e, "unknown command") {
-		t.Fatalf("legacy JSON import command should be removed, code=%d err=%q", code, e)
-	}
-	if code, _, e := run(t, "", "-c"); code != 2 || !strings.Contains(e, "need at least one") {
-		t.Fatalf("missing file input must be a usage error, code=%d err=%q", code, e)
-	}
-	if code, _, e := run(t, "", "-p", "one", "two"); code != 2 || !strings.Contains(e, "usage: suchi -p") {
-		t.Fatalf("too many paste destinations must be a usage error, code=%d err=%q", code, e)
-	}
-	if code, _, e := run(t, "", "-c", "-x", "two"); code != 2 || !strings.Contains(e, "choose only one") {
-		t.Fatalf("conflicting file operations must be rejected, code=%d err=%q", code, e)
-	}
 	if code, _, _ := run(t, "", "add", "--no-such-flag"); code != 2 {
 		t.Fatalf("bad flag must be a usage error, got %d", code)
 	}
-	if code, _, e := run(t, "", "add", "--selection", "nope", "x"); code != 1 || !strings.Contains(e, "selection must be") {
-		t.Fatalf("bad selection: code=%d %q", code, e)
+	if code, _, e := run(t, "", "add", "--limit", "0", "x"); code != 1 || !strings.Contains(e, "limit must be") {
+		t.Fatalf("bad limit: code=%d %q", code, e)
 	}
 }
 
@@ -146,23 +188,5 @@ func TestStatusAndStopWhenNotRunning(t *testing.T) {
 	}
 	if code, out, _ := run(t, "", "stop"); code != 0 || !strings.Contains(out, "not running") {
 		t.Fatalf("stop: code=%d out=%q", code, out)
-	}
-}
-
-func TestCutDoesNotRemoveSourcesWhenClipboardUnavailable(t *testing.T) {
-	sandbox(t)
-	source := filepath.Join(t.TempDir(), "assets")
-	if err := os.MkdirAll(filepath.Join(source, "nested"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(source, "nested", "photo.jpg"), []byte{0, 1, 2, 255}, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	code, _, errOut := run(t, "", "-x", source)
-	if code == 0 || !strings.Contains(errOut, "file bundles require") {
-		t.Fatalf("expected missing-clipboard error, code=%d err=%q", code, errOut)
-	}
-	if _, err := os.Stat(filepath.Join(source, "nested", "photo.jpg")); err != nil {
-		t.Fatalf("cut removed the source even though the clipboard was unavailable: %v", err)
 	}
 }

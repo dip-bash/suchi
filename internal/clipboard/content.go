@@ -18,18 +18,15 @@ const (
 	KindText  Kind = "text"
 	KindImage Kind = "image"
 	KindFiles Kind = "files"
-	// KindArchive is a binary file bundle used by the CLI file-transfer
-	// commands. It is intentionally not treated as ordinary text by watchers.
-	KindArchive Kind = "archive"
 )
 
-// Item is one thing on the clipboard: text, an image, a list of copied files,
-// or a binary archive used by the CLI file-transfer commands.
+// Item is one thing on the clipboard: text, an image, or a list of copied files.
 type Item struct {
 	Kind Kind
 	Text string // the text, or the absolute file paths (one per line) for KindFiles
 	MIME string // image/png ... for images; text/uri-list for files
-	Data []byte // image bytes or a binary archive payload
+	Data []byte // image bytes
+	Cut  bool   // KindFiles: a cut (move) rather than a copy
 }
 
 // Limits bound what Watch reports.
@@ -43,12 +40,18 @@ func (it Item) Paths() []string {
 	if it.Kind != KindFiles {
 		return nil
 	}
-	return strings.Split(it.Text, "\n")
+	var out []string
+	for _, p := range strings.Split(it.Text, "\n") {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Plain is the closest plain-text form of the item (used when only text can be delivered).
 func (it Item) Plain() string {
-	if it.Kind == KindImage || it.Kind == KindArchive {
+	if it.Kind == KindImage {
 		return ""
 	}
 	return it.Text
@@ -92,10 +95,12 @@ func candidates(mimes []string) []candidate {
 		}
 	}
 	var out []candidate
+	// The GNOME format carries the copy/cut verb; prefer it when offered.
+	if has(mimes, mimeGnomeCopy) {
+		out = append(out, candidate{KindFiles, mimeGnomeCopy})
+	}
 	if has(mimes, mimeURIList) {
 		out = append(out, candidate{KindFiles, mimeURIList})
-	} else if has(mimes, mimeGnomeCopy) {
-		out = append(out, candidate{KindFiles, mimeGnomeCopy})
 	}
 	text := ""
 	for _, want := range textMimes {
@@ -145,7 +150,12 @@ func buildItem(c candidate, data []byte, lim Limits) (Item, bool) {
 		if len(paths) == 0 {
 			return Item{}, false
 		}
-		return Item{Kind: KindFiles, Text: strings.Join(paths, "\n"), MIME: mimeURIList}, true
+		cut := false
+		if c.mime == mimeGnomeCopy {
+			first, _, _ := strings.Cut(string(data), "\n")
+			cut = strings.TrimSpace(first) == "cut"
+		}
+		return Item{Kind: KindFiles, Text: strings.Join(paths, "\n"), MIME: mimeURIList, Cut: cut}, true
 	case KindImage:
 		if len(data) == 0 || (lim.MaxMedia > 0 && len(data) > lim.MaxMedia) {
 			return Item{}, false
@@ -200,21 +210,19 @@ func Formats(it Item) []Format {
 	switch it.Kind {
 	case KindImage:
 		return []Format{{it.MIME, it.Data}}
-	case KindArchive:
-		mime := it.MIME
-		if mime == "" {
-			mime = "application/gzip"
-		}
-		return []Format{{mime, it.Data}, {"application/x-gzip", it.Data}}
 	case KindFiles:
 		paths := it.Paths()
 		uris := make([]string, len(paths))
 		for i, p := range paths {
 			uris[i] = FileURI(p)
 		}
+		verb := "copy"
+		if it.Cut {
+			verb = "cut"
+		}
 		return []Format{
 			{mimeURIList, []byte(strings.Join(uris, "\r\n") + "\r\n")},
-			{mimeGnomeCopy, []byte("copy\n" + strings.Join(uris, "\n"))},
+			{mimeGnomeCopy, []byte(verb + "\n" + strings.Join(uris, "\n"))},
 			{"text/plain;charset=utf-8", []byte(it.Text)},
 			{"text/plain", []byte(it.Text)},
 		}
@@ -232,15 +240,16 @@ func Formats(it Item) []Format {
 type itemHeader struct {
 	Kind Kind   `json:"kind"`
 	MIME string `json:"mime"`
+	Cut  bool   `json:"cut,omitempty"`
 }
 
 func encodeItem(w io.Writer, it Item) error {
-	h, _ := json.Marshal(itemHeader{it.Kind, it.MIME})
+	h, _ := json.Marshal(itemHeader{it.Kind, it.MIME, it.Cut})
 	if _, err := w.Write(append(h, '\n')); err != nil {
 		return err
 	}
 	body := []byte(it.Text)
-	if it.Kind == KindImage || it.Kind == KindArchive {
+	if it.Kind == KindImage {
 		body = it.Data
 	}
 	_, err := w.Write(body)
@@ -262,10 +271,10 @@ func decodeItem(r io.Reader) (Item, error) {
 		return Item{}, err
 	}
 	switch h.Kind {
-	case KindImage, KindArchive:
-		return Item{Kind: h.Kind, MIME: h.MIME, Data: body}, nil
+	case KindImage:
+		return Item{Kind: KindImage, MIME: h.MIME, Data: body}, nil
 	case KindFiles, KindText:
-		return Item{Kind: h.Kind, MIME: h.MIME, Text: string(body)}, nil
+		return Item{Kind: h.Kind, MIME: h.MIME, Text: string(body), Cut: h.Cut}, nil
 	}
 	return Item{}, errors.New("unknown item kind")
 }

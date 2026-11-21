@@ -98,8 +98,8 @@ func Foreground(ctx context.Context, cfg config.Config, ready func(error)) error
 	}
 	defer st.Close()
 
-	sel := clipboard.Selection(cfg.Selection)
-	slog.Info("watching clipboard", "backend", b.Name(), "selection", cfg.Selection, "db", cfg.DBPath)
+	sel := clipboard.Clipboard
+	slog.Info("watching clipboard", "backend", b.Name(), "db", cfg.DBPath)
 	signal(nil)
 	lim := store.Limits{Count: cfg.Limit, MaxText: cfg.MaxBytes, MaxMedia: cfg.MaxMedia, MediaBudget: config.DefaultMediaBudget}
 	err = b.Watch(ctx, sel, clipboard.Limits{MaxText: cfg.MaxBytes, MaxMedia: cfg.MaxMedia}, func(it clipboard.Item) {
@@ -143,7 +143,6 @@ func Start(cfg config.Config) (pid int, err error) {
 		"--limit", strconv.Itoa(cfg.Limit),
 		"--max-size", strconv.Itoa(cfg.MaxBytes),
 		"--max-media", strconv.Itoa(cfg.MaxMedia),
-		"--selection", cfg.Selection,
 		"--backend", cfg.Backend)
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.ExtraFiles = []*os.File{pw}
@@ -173,7 +172,6 @@ func Start(cfg config.Config) (pid int, err error) {
 		return 0, fmt.Errorf("daemon exited during start-up; see %s", cfg.LogPath())
 	case <-time.After(10 * time.Second):
 		_ = cmd.Process.Kill()
-		_ = cmd.Wait() // reap the child; otherwise repeated starts can leave zombies
 		return 0, fmt.Errorf("daemon did not start in time; see %s", cfg.LogPath())
 	}
 }

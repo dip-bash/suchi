@@ -66,37 +66,6 @@ func TestLayoutTruncatesByColumnsNotRunes(t *testing.T) {
 	}
 }
 
-func TestMatchRepeatedPrefixIsLinearAndReturnsFirstMatch(t *testing.T) {
-	low := []rune(strings.Repeat("a", 20000) + "b")
-	query := []rune(strings.Repeat("a", 1000) + "c")
-	if _, ok := Match(query, low, false); ok {
-		t.Fatal("query with a long repeated prefix must not match")
-	}
-
-	idx, ok := Match([]rune("aaab"), []rune("aaaaab"), false)
-	if !ok || !reflect.DeepEqual(idx, []int{2, 3, 4, 5}) {
-		t.Fatalf("first substring match = %v, %v", idx, ok)
-	}
-}
-
-func TestLayoutOnlyMarksVisibleMatches(t *testing.T) {
-	segs := Layout([]rune("abcdef"), []int{1, 4}, 4, "…")
-	var b strings.Builder
-	var matched strings.Builder
-	for _, seg := range segs {
-		b.WriteString(seg.Text)
-		if seg.Match {
-			matched.WriteString(seg.Text)
-		}
-	}
-	if got := b.String(); got != "abc…" || Width(got) > 4 {
-		t.Fatalf("visible layout = %q (width %d)", got, Width(got))
-	}
-	if got := matched.String(); got != "b" {
-		t.Fatalf("visible matches = %q, want b", got)
-	}
-}
-
 func TestWrap(t *testing.T) {
 	got := Wrap("hello world foo\n\n\tindented\x1b[0m", 11)
 	want := []string{"hello world", "foo", "", "    indente", "d·[0m"}

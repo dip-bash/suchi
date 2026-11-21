@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -107,6 +109,59 @@ func (s *Store) UpdateSnippet(ctx context.Context, sn Snippet) error {
 func (s *Store) DeleteSnippet(ctx context.Context, id int64) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM snippets WHERE id = ?`, id)
 	return err
+}
+
+// ImportLegacyJSON imports a history.json written by the original Python
+// version of suchi. Existing entries are kept; duplicates are bumped.
+func (s *Store) ImportLegacyJSON(ctx context.Context, path string, limit, maxBytes int) (imported int, err error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return 0, err
+	}
+	var items []struct {
+		Text     string  `json:"text"`
+		Pinned   bool    `json:"pinned"`
+		CopiedAt float64 `json:"copiedAt"`
+		UsedAt   float64 `json:"usedAt"`
+	}
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return 0, fmt.Errorf("%s is not a suchi history file: %w", path, err)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for _, it := range items {
+		text := strings.ToValidUTF8(it.Text, "\uFFFD")
+		if strings.TrimSpace(text) == "" || len(text) > maxBytes {
+			continue
+		}
+		copied := int64(it.CopiedAt)
+		if copied <= 0 {
+			copied = nowMS()
+		}
+		pin := 0
+		if it.Pinned {
+			pin = 1
+		}
+		// Keep the original timestamps; on conflict keep the newer ones.
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO clips (kind, text, size, pinned, copied_at, used_at) VALUES ('text', ?, ?, ?, ?, ?)
+			ON CONFLICT(kind, text) WHERE kind <> 'image' DO UPDATE SET
+				pinned    = max(pinned, excluded.pinned),
+				copied_at = max(copied_at, excluded.copied_at),
+				used_at   = max(used_at, excluded.used_at)`,
+			text, len(text), pin, copied, int64(it.UsedAt)); err != nil {
+			return imported, fmt.Errorf("import: %w", err)
+		}
+		imported++
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	// Apply the history limit once, after the import.
+	return imported, prune(ctx, s.db, limit)
 }
 
 // GetSnippet reads one snippet.

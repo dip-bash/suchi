@@ -2,11 +2,8 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
-	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -39,24 +36,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case frameMsg:
 		m.pill.step()
 		m.scroll.step()
-		m.open.step()
 		m.frameRunning = false
-		if m.overlay == overlayView && m.open.settled() {
+		if m.overlay == overlayView {
 			cmd = m.scheduleImage()
 		}
 	case drawImageMsg:
 		m.drawImage(msg)
-	case textPreviewMsg:
-		if msg.gen == m.pop.gen && m.overlay == overlayView && msg.width == m.pop.previewWidth {
-			m.pop.previewPending = false
-			if msg.width == m.popupInnerWidth() {
-				m.pop.inner = msg.width
-				m.pop.lines = msg.lines
-				m.pop.vp.Width = msg.width
-				m.pop.vp.SetContent(strings.Join(msg.lines, "\n"))
-			}
-		}
 	case execDoneMsg:
+		m.execing.Store(false)
 		if msg.err != nil {
 			m.setFlash(fmt.Sprintf("%q: %v", msg.name, msg.err))
 		} else {
@@ -473,25 +460,11 @@ func (m *model) run() tea.Cmd {
 		m.setFlash("not a command - press e and set the type to command")
 		return nil
 	}
-	// Keep the command in the terminal's foreground process group so it can
-	// read input normally. The wrapper traps shutdown and terminates the shell
-	// running the snippet before returning control to Bubble Tea.
-	const wrapper = `child=; cleanup() { if [ -n "$child" ]; then kill -TERM "$child" 2>/dev/null || :; wait "$child" 2>/dev/null || :; fi; }; trap cleanup TERM HUP INT; sh -c "$1" & child=$!; wait "$child"; s=$?; child=; trap - TERM HUP INT; printf '\n[exit %s] press Enter to return... ' "$s"; read _; exit "$s"`
-	cmd := exec.CommandContext(m.ctx, "sh", "-c", wrapper, "suchi", sn.s.Body)
-	// CommandContext's default cancellation is SIGKILL, which prevents the
-	// wrapper's cleanup trap from running. Give it a short graceful window;
-	// WaitDelay is the final safeguard for a shell that refuses to exit.
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		err := cmd.Process.Signal(syscall.SIGTERM)
-		if err == os.ErrProcessDone || err == syscall.ESRCH {
-			return nil
-		}
-		return err
-	}
-	cmd.WaitDelay = time.Second
+	// The command runs in its own shell; afterwards wait for Enter so its
+	// output stays readable before suchi redraws.
+	const wrapper = `sh -c "$1"; s=$?; printf '\n[exit %s] press Enter to return... ' "$s"; read _; exit "$s"`
+	cmd := exec.Command("sh", "-c", wrapper, "suchi", sn.s.Body)
 	name := sn.s.Name
+	m.execing.Store(true)
 	return tea.ExecProcess(cmd, func(err error) tea.Msg { return execDoneMsg{name: name, err: err} })
 }

@@ -797,10 +797,15 @@ func TestTabSwitchIsInstant(t *testing.T) {
 }
 
 func TestFrameLoopStopsWhenSettled(t *testing.T) {
-	m := newTestModel(t, strings.Repeat("a line\n", 20))
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}) // the popup unfolds with a spring
-	if cmd == nil || !m.frameRunning {
-		t.Fatal("an animation needs the frame loop")
+	var clips []string
+	for i := 0; i < 60; i++ {
+		clips = append(clips, fmt.Sprintf("entry %02d", i))
+	}
+	m := newTestModel(t, clips...)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 12})
+	m.settle()
+	if cmd := press(m, "end"); cmd == nil || !m.frameRunning {
+		t.Fatal("a list glide needs the frame loop")
 	}
 	for i := 0; i < 600 && m.frameRunning; i++ {
 		m.Update(frameMsg(time.Now()))
@@ -833,13 +838,30 @@ func TestListGlidesButKeepsTheSelectionVisible(t *testing.T) {
 	}
 }
 
-func TestPopupUnfolds(t *testing.T) {
+func TestPopupOpensInstantly(t *testing.T) {
 	m := newTestModel(t, strings.Repeat("a line\n", 30))
 	press(m, "e")
-	first := m.popLayout().boxH
+	if m.overlay != overlayView {
+		t.Fatal("e must open the popup")
+	}
+	if m.animating() || m.frameRunning {
+		t.Fatal("the popup must open without an animation")
+	}
+	first := m.popLayout()
+	if first.vpH <= 1 {
+		t.Fatalf("the popup must be fully open at once, vpH=%d", first.vpH)
+	}
 	m.settle()
-	if last := m.popLayout().boxH; last <= first {
-		t.Fatalf("the popup must grow while opening: %d -> %d", first, last)
+	if last := m.popLayout(); last.boxH != first.boxH || last.vpH != first.vpH {
+		t.Fatalf("the popup must not change size after opening: %+v -> %+v", first, last)
+	}
+}
+
+func TestStartsOnSnipTab(t *testing.T) {
+	m, _ := newTestModelProto(t, preview.Blocks)
+	m2 := newModel(context.Background(), m.st, Options{Snips: true, Protocol: preview.Blocks, Out: &bytes.Buffer{}})
+	if m2.tab != tabSnips || m2.pill.pos != float64(tabStart(tabSnips)) {
+		t.Fatalf("tab=%v pill=%v", m2.tab, m2.pill.pos)
 	}
 }
 
@@ -1105,5 +1127,132 @@ func TestFooterOffersUndoOnlyWhenThereIsSomething(t *testing.T) {
 	m.flash = ""
 	if !strings.Contains(view(m), "u undo") {
 		t.Fatalf("after a delete the footer offers undo:\n%s", view(m))
+	}
+}
+
+// --- bat-like popup: syntax highlighting and line numbers --------------------------------
+
+func withTrueColour(t *testing.T) {
+	t.Helper()
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(old) })
+}
+
+func TestTextPopupHasLineNumbersAndALanguageBadge(t *testing.T) {
+	m := newTestModel(t, "def fibonacci(n):\n    a, b = 0, 1\n    return a")
+	press(m, "e")
+	v := view(m)
+	for _, want := range []string{"  1 │ def fibonacci(n):", "  2 │     a, b = 0, 1", "  3 │     return a", " PYTHON ", "3 lines"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("popup lacks %q:\n%s", want, v)
+		}
+	}
+	if m.pop.lang.Name() != "Python" {
+		t.Fatalf("detected %q", m.pop.lang.Name())
+	}
+}
+
+func TestPopupColoursCodeButNotProse(t *testing.T) {
+	withTrueColour(t)
+	m := newTestModel(t, "SELECT id, name FROM users WHERE id = 42;", "Please send me the invoice for last month, thanks!")
+	press(m, "e") // newest first: the prose
+	m.settle()
+	raw := m.View()
+	if !strings.Contains(plain(raw), " TEXT ") || strings.Contains(raw, "\x1b[38;2;") && strings.Contains(plain(raw), "invoice") && countColours(raw) > 2 {
+		t.Errorf("prose must stay plain text (colours: %d)", countColours(raw))
+	}
+	press(m, "esc")
+	press(m, "j")
+	press(m, "e")
+	m.settle()
+	raw = m.View()
+	if !strings.Contains(plain(raw), " SQL ") || countColours(raw) < 4 {
+		t.Fatalf("SQL must be highlighted (colours: %d):\n%s", countColours(raw), plain(raw))
+	}
+}
+
+func countColours(s string) int {
+	seen := map[string]bool{}
+	for _, m := range regexp.MustCompile(`\x1b\[38;2;(\d+;\d+;\d+)m`).FindAllStringSubmatch(s, -1) {
+		seen[m[1]] = true
+	}
+	return len(seen)
+}
+
+func TestPopupNeverPassesClipboardEscapesToTheTerminal(t *testing.T) {
+	withTrueColour(t)
+	m := newTestModel(t, "echo hi \x1b]0;pwned\x07 \x1b[2J \x1b[31m red")
+	press(m, "e")
+	m.settle()
+	raw := m.View()
+	for _, bad := range []string{"\x1b]0;", "\x1b[2J", "\x07"} {
+		if strings.Contains(raw, bad) {
+			t.Fatalf("the popup passed %q from the clipboard to the terminal", bad)
+		}
+	}
+	if strings.Contains(raw, "\x1b[31m red") {
+		t.Fatal("clipboard colour codes must not survive")
+	}
+}
+
+func TestPopupWrapsLongCodeLinesWithinTheBox(t *testing.T) {
+	m := newTestModel(t, "x = '"+strings.Repeat("abcdefghij", 40)+"'\ny = 2")
+	m.Update(tea.WindowSizeMsg{Width: 60, Height: 24})
+	press(m, "e")
+	v := view(m)
+	for _, l := range strings.Split(v, "\n") {
+		if textutil.Width(l) > 60 {
+			t.Fatalf("line wider than the terminal: %q", l)
+		}
+	}
+	if !strings.Contains(v, "  1 │ x = '") || !strings.Contains(v, "    │ ") {
+		t.Fatalf("wrapped rows keep the gutter blank:\n%s", v)
+	}
+}
+
+func TestCopiedTextFileIsShownLikeBat(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "main.go")
+	_ = os.WriteFile(src, []byte("package main\n\nfunc main() {\n\tprintln(\"hi\")\n}\n"), 0o600)
+	bin := filepath.Join(dir, "blob.bin")
+	_ = os.WriteFile(bin, append([]byte("MZ"), make([]byte, 600)...), 0o600)
+
+	m := newTestModel(t)
+	addFiles(t, m, src)
+	press(m, "e")
+	v := view(m)
+	for _, want := range []string{" GO ", "main.go", "  1 │ package main", "  3 │ func main() {", "  4 │     println(", "Go"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("file popup lacks %q:\n%s", want, v)
+		}
+	}
+	press(m, "esc")
+
+	addFiles(t, m, bin)
+	press(m, "home")
+	press(m, "e")
+	if v := view(m); strings.Contains(v, " 1 │") || !strings.Contains(v, "blob.bin") {
+		t.Fatalf("a binary file gets details only:\n%s", v)
+	}
+}
+
+func TestBigTextFileIsTruncatedWithANote(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "big.txt")
+	_ = os.WriteFile(p, []byte(strings.Repeat("a line of text\n", 40000)), 0o600) // 600 KB
+	m := newTestModel(t)
+	addFiles(t, m, p)
+	press(m, "e")
+	if v := view(m); !strings.Contains(v, "first 256.0 KB") {
+		t.Fatalf("a big file says how much is shown:\n%s", v)
+	}
+}
+
+func TestASCIIModeUsesAPlainGutter(t *testing.T) {
+	m := newTestModel(t, "def f():\n    return 1")
+	m.g = asciiGlyphs
+	press(m, "e")
+	if v := view(m); !strings.Contains(v, "  1 | def f():") || strings.Contains(v, "│") && strings.Contains(v, "│ def") {
+		t.Fatalf("ascii gutter expected:\n%s", v)
 	}
 }

@@ -38,13 +38,8 @@ func Acquire(path string) (*Lock, error) {
 		_ = f.Close()
 		return nil, ErrHeld{PID: pid}
 	}
-	if err := f.Truncate(0); err != nil {
-		_ = f.Close() // closing releases the flock
-		return nil, fmt.Errorf("clear pid lock file: %w", err)
-	}
-	if _, err := f.WriteAt([]byte(strconv.Itoa(os.Getpid())), 0); err != nil {
-		_ = f.Close() // closing releases the flock
-		return nil, fmt.Errorf("write pid lock file: %w", err)
+	if err := f.Truncate(0); err == nil {
+		_, _ = f.WriteAt([]byte(strconv.Itoa(os.Getpid())), 0)
 	}
 	return &Lock{f: f}, nil
 }
@@ -52,9 +47,7 @@ func Acquire(path string) (*Lock, error) {
 // Release drops the lock.
 func (l *Lock) Release() {
 	if l != nil && l.f != nil {
-		// Leave the last PID as harmless diagnostic/stale data. Clearing it
-		// before Close creates a window where the lock is held but no PID can
-		// be signalled by a concurrent Takeover.
+		_ = l.f.Truncate(0)
 		_ = l.f.Close() // closing releases the flock
 		l.f = nil
 	}
@@ -80,21 +73,14 @@ func Holder(path string) (held bool, pid int) {
 	return true, readPID(f)
 }
 
-// Takeover makes this process the holder. If another process owns the lock, it
-// first receives SIGTERM so its TUI can restore the terminal and exit normally.
-// If the same process still owns the lock after wait, it receives SIGKILL as a
-// last resort. The PID is re-read from the lock file immediately before SIGKILL
-// and the lock is re-checked, so a stale PID file is never enough to kill a
-// process. A killed holder cannot restore its terminal; this is intentionally
-// only the fallback after graceful shutdown has failed.
+// Takeover makes this process the holder: if another process holds the lock
+// it is asked to exit with SIGTERM (re-sent every second) and the lock is
+// taken as soon as it lets go. It never uses SIGKILL, because a process
+// that is killed cannot put its terminal back in order; if the holder does
+// not exit within wait, Takeover gives up with an error.
 func Takeover(ctx context.Context, path string, wait time.Duration) (*Lock, error) {
 	deadline := time.Now().Add(wait)
-	var signalledPID int
-	killed := false
-	killDeadline := time.Time{}
-	const poll = 30 * time.Millisecond
-	const killGrace = time.Second
-
+	var lastSignal time.Time
 	for {
 		l, err := Acquire(path)
 		if err == nil {
@@ -104,47 +90,18 @@ func Takeover(ctx context.Context, path string, wait time.Duration) (*Lock, erro
 		if !ok {
 			return nil, err
 		}
-
-		if held.PID > 0 && held.PID != os.Getpid() && held.PID != signalledPID {
-			// Signal once per holder. A later launcher may have taken the lock
-			// while we were waiting, in which case it gets its own TERM.
+		if held.PID > 0 && held.PID != os.Getpid() && time.Since(lastSignal) >= time.Second {
 			_ = syscall.Kill(held.PID, syscall.SIGTERM)
-			signalledPID = held.PID
+			lastSignal = time.Now()
 		}
-
-		now := time.Now()
-		if !killed && !now.Before(deadline) {
-			// Confirm that someone still owns the lock, and use the PID currently
-			// written by that holder rather than the potentially stale PID above.
-			stillHeld, currentPID := Holder(path)
-			if !stillHeld {
-				continue // the next Acquire should win
-			}
-			if currentPID <= 0 || currentPID == os.Getpid() {
-				return nil, fmt.Errorf("the previous suchi window still holds the UI lock (pid %d); "+
-					"could not identify its process safely", currentPID)
-			}
-			if err := syscall.Kill(currentPID, syscall.SIGKILL); err != nil && err != syscall.ESRCH {
-				return nil, fmt.Errorf("could not stop previous suchi window (pid %d): %w", currentPID, err)
-			}
-			killed = true
-			killDeadline = now.Add(killGrace)
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("the previous suchi (pid %d) did not close within %s - it may be busy "+
+				"running a command and will close when that finishes; then run suchi again", held.PID, wait)
 		}
-		if killed && !time.Now().Before(killDeadline) {
-			return nil, fmt.Errorf("previous suchi window (pid %d) did not release the UI lock after SIGKILL", held.PID)
-		}
-
-		t := time.NewTimer(poll)
 		select {
 		case <-ctx.Done():
-			if !t.Stop() {
-				select {
-				case <-t.C:
-				default:
-				}
-			}
 			return nil, ctx.Err()
-		case <-t.C:
+		case <-time.After(30 * time.Millisecond):
 		}
 	}
 }

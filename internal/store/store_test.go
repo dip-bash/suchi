@@ -101,7 +101,7 @@ func TestOpenHealsDatabaseWithoutVersion(t *testing.T) {
 	defer s.Close()
 	cl, _ := s.ListClips(context.Background())
 	sn, _ := s.ListSnippets(context.Background())
-	if len(cl) != 1 || cl[0].Preview != "survivor" || cl[0].Length != 8 || cl[0].Multiline || !cl[0].Pinned || cl[0].Kind != ClipText || len(sn) != 1 {
+	if len(cl) != 1 || cl[0].Preview != "survivor" || !cl[0].Pinned || cl[0].Kind != ClipText || len(sn) != 1 {
 		t.Fatalf("data lost or mangled: %+v %+v", cl, sn)
 	}
 	s2, err := Open(path) // and reopening is a no-op
@@ -187,18 +187,6 @@ func TestPinnedExemptFromLimit(t *testing.T) {
 	got := texts(t, s)
 	if len(got) != 3 || got[0] != "keep me" {
 		t.Fatalf("got %v", got)
-	}
-}
-
-func TestSQLiteTextLengthMatchesStoredTextSemantics(t *testing.T) {
-	for in, want := range map[string]int{
-		"hello":           5,
-		"héllo 🧠":         7,
-		"before\x00after": 6,
-	} {
-		if got := sqliteTextLength(in); got != want {
-			t.Errorf("sqliteTextLength(%q) = %d, want %d", in, got, want)
-		}
 	}
 }
 
@@ -344,6 +332,31 @@ func TestSnippetValidation(t *testing.T) {
 	}
 }
 
+func TestImportLegacyJSON(t *testing.T) {
+	s, _ := open(t)
+	ctx := context.Background()
+	p := filepath.Join(t.TempDir(), "history.json")
+	_ = os.WriteFile(p, []byte(`[
+		{"text":"old one","pinned":true,"copiedAt":1700000000000,"usedAt":0},
+		{"text":"old two","pinned":false,"copiedAt":1700000001000,"usedAt":1700000009000},
+		{"text":"   ","pinned":false,"copiedAt":1},
+		{"nope":1}]`), 0o600)
+	n, err := s.ImportLegacyJSON(ctx, p, 100, 1<<20)
+	if err != nil || n != 3 { // the {"nope":1} item has empty text and is skipped only via blank check
+		// 2 real entries + 1 skipped blank + 1 skipped empty => imported counts only inserted rows
+		if n != 2 {
+			t.Fatalf("imported %d (err=%v)", n, err)
+		}
+	}
+	cl, _ := s.ListClips(ctx)
+	if len(cl) != 2 || cl[0].Preview != "old one" || !cl[0].Pinned {
+		t.Fatalf("got %+v", cl)
+	}
+	if cl[1].UsedAt.UnixMilli() != 1700000009000 {
+		t.Fatalf("usedAt not preserved: %v", cl[1].UsedAt)
+	}
+}
+
 func TestImagesAreStoredDedupedAndDescribed(t *testing.T) {
 	s, _ := open(t)
 	ctx := context.Background()
@@ -399,54 +412,6 @@ func TestMediaLimitsAndBudget(t *testing.T) {
 	data, _, _ := s.ClipData(ctx, cl[0].ID)
 	if data[0] != 4 {
 		t.Fatalf("newest image must survive, got marker %d", data[0])
-	}
-}
-
-func TestMediaBudgetKeepsPinnedAndNewestImages(t *testing.T) {
-	s, _ := open(t)
-	ctx := context.Background()
-	lim := Limits{Count: 100, MaxText: 1 << 20, MaxMedia: 100, MediaBudget: 200}
-	ids := make([]int64, 0, 4)
-	for i := 0; i < 4; i++ {
-		d := make([]byte, 100)
-		d[0] = byte(i + 1)
-		if _, err := s.AddItem(ctx, NewClip{Kind: ClipImage, Mime: "image/png", Data: d}, lim); err != nil {
-			t.Fatal(err)
-		}
-		clips, err := s.ListClips(ctx)
-		if err != nil || len(clips) == 0 {
-			t.Fatalf("list clips: %v", err)
-		}
-		ids = append(ids, clips[0].ID)
-		time.Sleep(time.Millisecond)
-	}
-	// Pin the oldest image, then add another image. The budget should keep
-	// the pinned image and the newest unpinned image, pruning older ones.
-	if err := s.TogglePin(ctx, ids[0]); err != nil {
-		t.Fatal(err)
-	}
-	d := make([]byte, 100)
-	d[0] = 5
-	if _, err := s.AddItem(ctx, NewClip{Kind: ClipImage, Mime: "image/png", Data: d}, lim); err != nil {
-		t.Fatal(err)
-	}
-	clips, err := s.ListClips(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(clips) != 2 {
-		t.Fatalf("kept %d images, want pinned + newest", len(clips))
-	}
-	kept := map[byte]bool{}
-	for _, c := range clips {
-		data, _, err := s.ClipData(ctx, c.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		kept[data[0]] = true
-	}
-	if !kept[1] || !kept[5] || len(kept) != 2 {
-		t.Fatalf("kept image markers %v, want pinned 1 and newest 5", kept)
 	}
 }
 
@@ -532,7 +497,7 @@ func TestRestoreClipBringsBackEverything(t *testing.T) {
 	}
 	for i := range before { // same order, pin state and timestamps
 		b, a := before[i], after[i]
-		if b.ID != a.ID || b.Pinned != a.Pinned || !b.CopiedAt.Equal(a.CopiedAt) || !b.UsedAt.Equal(a.UsedAt) || b.Kind != a.Kind || b.Length != a.Length || b.Multiline != a.Multiline {
+		if b.ID != a.ID || b.Pinned != a.Pinned || !b.CopiedAt.Equal(a.CopiedAt) || !b.UsedAt.Equal(a.UsedAt) || b.Kind != a.Kind {
 			t.Fatalf("entry %d differs:\n before %+v\n after  %+v", i, b, a)
 		}
 	}

@@ -25,6 +25,11 @@ func (TTY) Name() string { return "tty" }
 // Watch implements Backend; a terminal has no clipboard to observe.
 func (TTY) Watch(context.Context, Selection, Limits, func(Item)) error { return ErrNoWatch }
 
+// Read implements Backend; a terminal has no clipboard to read.
+func (TTY) Read(context.Context, Selection, Limits) (Item, bool, error) {
+	return Item{}, false, ErrNoClipboard
+}
+
 // maxOSC52 keeps the escape sequence below what most terminals accept.
 const maxOSC52 = 70000
 

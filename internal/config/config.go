@@ -22,25 +22,23 @@ const (
 
 // Config is the effective configuration of one suchi invocation.
 type Config struct {
-	DBPath    string // SQLite database
-	StateDir  string // pid file and log
-	Limit     int    // max clipboard entries kept (pinned entries are exempt)
-	MaxBytes  int    // skip clipboard text larger than this
-	MaxMedia  int    // skip images larger than this
-	Selection string // "clipboard" or "primary"
-	Backend   string // "auto", "wayland", "x11" or "tty"
+	DBPath   string // SQLite database
+	StateDir string // pid file and log
+	Limit    int    // max clipboard entries kept (pinned entries are exempt)
+	MaxBytes int    // skip clipboard text larger than this
+	MaxMedia int    // skip images larger than this
+	Backend  string // "auto", "wayland", "x11" or "tty"
 }
 
 // Default builds a Config from XDG directories and SUCHI_* environment variables.
 func Default() Config {
 	return Config{
-		DBPath:    envStr("SUCHI_DB", filepath.Join(dataHome(), "suchi", "suchi.db")),
-		StateDir:  filepath.Join(stateHome(), "suchi"),
-		Limit:     envInt("SUCHI_LIMIT", DefaultLimit),
-		MaxBytes:  envInt("SUCHI_MAX_BYTES", DefaultMaxBytes),
-		MaxMedia:  envInt("SUCHI_MAX_MEDIA", DefaultMaxMedia),
-		Selection: "clipboard",
-		Backend:   envStr("SUCHI_BACKEND", "auto"),
+		DBPath:   envStr("SUCHI_DB", filepath.Join(dataHome(), "suchi", "suchi.db")),
+		StateDir: filepath.Join(stateHome(), "suchi"),
+		Limit:    envInt("SUCHI_LIMIT", DefaultLimit),
+		MaxBytes: envInt("SUCHI_MAX_BYTES", DefaultMaxBytes),
+		MaxMedia: envInt("SUCHI_MAX_MEDIA", DefaultMaxMedia),
+		Backend:  envStr("SUCHI_BACKEND", "auto"),
 	}
 }
 
@@ -55,11 +53,6 @@ func (c Config) LogPath() string { return filepath.Join(c.StateDir, "suchi.log")
 
 // Validate reports the first invalid setting.
 func (c Config) Validate() error {
-	switch c.Selection {
-	case "clipboard", "primary":
-	default:
-		return fmt.Errorf("selection must be clipboard or primary, got %q", c.Selection)
-	}
 	switch c.Backend {
 	case "auto", "wayland", "x11", "tty":
 	default:

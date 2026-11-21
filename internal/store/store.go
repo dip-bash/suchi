@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -79,19 +78,6 @@ var migrations = []string{
 		hash       TEXT    PRIMARY KEY,
 		expires_at INTEGER NOT NULL
 	);`,
-
-	// 4: match the list's computed active timestamp so reopening a large
-	// history does not repeatedly sort every row into a temporary B-tree.
-	`DROP INDEX IF EXISTS clips_recent;
-	 CREATE INDEX IF NOT EXISTS clips_active ON clips
-	 (pinned DESC, max(copied_at, used_at) DESC, id DESC);`,
-
-	// 5: cache display metadata so listing history does not scan the full text
-	// of every clipboard entry just to calculate its character count/newline.
-	`ALTER TABLE clips ADD COLUMN text_length INTEGER NOT NULL DEFAULT 0;
-	 ALTER TABLE clips ADD COLUMN multiline INTEGER NOT NULL DEFAULT 0;
-	 UPDATE clips SET text_length = length(text),
-	                    multiline = CASE WHEN instr(text, char(10)) > 0 THEN 1 ELSE 0 END;`,
 }
 
 // Open opens (creating if needed) the database at path. The file is created
@@ -105,10 +91,6 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database file: %w", err)
 	}
-	if err := f.Chmod(0o600); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("secure database file permissions: %w", err)
-	}
 	_ = f.Close()
 
 	db, err := sql.Open(driverName, path)
@@ -121,24 +103,14 @@ func Open(path string) (*Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	// Pragmas are per-connection; there is exactly one connection.
-	for _, p := range []string{"PRAGMA busy_timeout = 5000", "PRAGMA synchronous = NORMAL"} {
+	for _, p := range []string{
+		"PRAGMA busy_timeout = 5000",
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA synchronous = NORMAL",
+	} {
 		if _, err := db.ExecContext(ctx, p); err != nil {
 			_ = db.Close()
 			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-	}
-	// journal_mode=WAL is persistent. Reading the current mode avoids
-	// requesting a journal-mode change (and its write lock) every time the
-	// short-lived CLI or TUI process opens an already-initialised database.
-	var journal string
-	if err := db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&journal); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("read journal mode: %w", err)
-	}
-	if !strings.EqualFold(journal, "wal") {
-		if _, err := db.ExecContext(ctx, "PRAGMA journal_mode = WAL"); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("PRAGMA journal_mode = WAL: %w", err)
 		}
 	}
 	if err := s.migrate(ctx); err != nil {
@@ -156,20 +128,6 @@ func (s *Store) Close() error { return s.db.Close() }
 // database at once (daemon, UI, systemd unit) queue up on the busy timeout
 // instead of all trying to run the same migration.
 func (s *Store) migrate(ctx context.Context) (err error) {
-	// The common path is an already-current database. Read its migration
-	// version without acquiring a write lock; only new/old databases need the
-	// exclusive migration transaction below.
-	var current int
-	if readErr := s.db.QueryRowContext(ctx,
-		"SELECT COALESCE(MAX(version), 0) FROM schema_migrations").Scan(&current); readErr == nil {
-		if current > len(migrations) {
-			return fmt.Errorf("database schema v%d is newer than this suchi (v%d); upgrade suchi", current, len(migrations))
-		}
-		if current == len(migrations) {
-			return nil
-		}
-	}
-
 	conn, err := s.db.Conn(ctx)
 	if err != nil {
 		return err

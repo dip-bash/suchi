@@ -1,11 +1,14 @@
 package preview
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Category groups file types for the coloured type badge.
@@ -134,4 +137,39 @@ func ShortPath(path string, width int) string {
 		tail = tail[i:]
 	}
 	return "..." + tail
+}
+
+// ReadTextHead reads up to max bytes from the start of a file for a text
+// preview. ok is false for binary files (NUL bytes, or mostly invalid UTF-8),
+// unreadable files and empty files. truncated reports that more follows.
+func ReadTextHead(path string, max int) (text string, truncated, ok bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false, false
+	}
+	defer f.Close()
+	buf := make([]byte, max+1)
+	n, _ := io.ReadFull(f, buf)
+	if n == 0 {
+		return "", false, false
+	}
+	data := buf[:n]
+	if truncated = n > max; truncated {
+		data = data[:max]
+		// do not cut a multi-byte character in half
+		for len(data) > 0 && !utf8.Valid(data) && len(data) > max-4 {
+			data = data[:len(data)-1]
+		}
+	}
+	probe := data
+	if len(probe) > 8192 {
+		probe = probe[:8192]
+	}
+	if bytes.IndexByte(probe, 0) >= 0 {
+		return "", false, false // binary
+	}
+	if bad := len(strings.ToValidUTF8(string(probe), "")); len(probe) > 0 && bad*10 < len(probe)*9 {
+		return "", false, false // mostly not text
+	}
+	return string(data), truncated, true
 }

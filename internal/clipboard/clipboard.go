@@ -11,14 +11,12 @@
 package clipboard
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
-	"unicode"
 )
 
 // Selection is which X/Wayland selection to use.
@@ -28,9 +26,6 @@ type Selection string
 const (
 	Clipboard Selection = "clipboard"
 	Primary   Selection = "primary"
-	// Secondary is the X11 SECONDARY selection used by xclip-copyfile.
-	// Wayland does not expose a secondary selection through data-control.
-	Secondary Selection = "secondary"
 )
 
 // HelperArg is the hidden command-line argument the binary is re-executed
@@ -56,6 +51,9 @@ type Backend interface {
 	// Set puts the item on the selection and returns once it is
 	// established; it stays available after the calling process exits.
 	Set(ctx context.Context, it Item, sel Selection) error
+	// Read returns what is currently on the selection (ok is false when it
+	// is empty or cannot be read).
+	Read(ctx context.Context, sel Selection, lim Limits) (it Item, ok bool, err error)
 }
 
 // Detect picks a backend. pref is "auto", "wayland", "x11" or "tty". For
@@ -119,68 +117,12 @@ func Deliver(ctx context.Context, b Backend, problem string, it Item, sel Select
 	text := it.Plain()
 	if isTerminal(out) {
 		fmt.Fprintln(errw, "suchi: no clipboard available here; entry printed below "+
-			"(use `suchi --print` with a shell binding to paste it, see README)")
+			"(use `suchi -p` with a shell binding to paste it, see README)")
 		_, err := fmt.Fprintln(out, SanitizeForTerminal(text))
 		return err
 	}
 	_, err := io.WriteString(out, text)
 	return err
-}
-
-// SetFileBundle publishes a gzip-compressed tar archive in the file-transfer
-// selection. X11 uses SECONDARY for compatibility with xclip-copyfile; the
-// Wayland data-control protocol has no SECONDARY, so it uses CLIPBOARD.
-func SetFileBundle(ctx context.Context, b Backend, data []byte) error {
-	return SetFileBundleReader(ctx, b, bytes.NewReader(data))
-}
-
-// SetFileBundleReader is the streaming form of SetFileBundle. X11 can send
-// arbitrarily large bundles without buffering them in Suchi's process.
-func SetFileBundleReader(ctx context.Context, b Backend, src io.Reader) error {
-	switch backend := b.(type) {
-	case X11:
-		return backend.SetRawReader(ctx, src, Secondary)
-	case Wayland:
-		const maxWaylandBundle = 512 << 20
-		data, err := io.ReadAll(io.LimitReader(src, maxWaylandBundle+1))
-		if err != nil {
-			return fmt.Errorf("read file bundle: %w", err)
-		}
-		if len(data) > maxWaylandBundle {
-			return errors.New("Wayland file bundles are limited to 512 MiB; use X11 for larger transfers")
-		}
-		return backend.Set(ctx, Item{Kind: KindArchive, MIME: "application/gzip", Data: data}, Clipboard)
-	default:
-		return errors.New("file bundles need an X11 or Wayland clipboard; no graphical clipboard is available")
-	}
-}
-
-// ReadFileBundle reads the file-transfer selection. It accepts the gzip tar
-// payload created by Suchi or by xclip-copyfile.
-func ReadFileBundle(ctx context.Context, b Backend) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := ReadFileBundleTo(ctx, b, &buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// ReadFileBundleTo streams a file bundle to dst on X11. Wayland's clipboard
-// owner currently delivers its custom MIME payload as a bounded byte slice.
-func ReadFileBundleTo(ctx context.Context, b Backend, dst io.Writer) error {
-	switch backend := b.(type) {
-	case X11:
-		return backend.ReadRawTo(ctx, Secondary, dst)
-	case Wayland:
-		data, err := backend.ReadFileBundle(ctx, Clipboard)
-		if err != nil {
-			return err
-		}
-		_, err = dst.Write(data)
-		return err
-	default:
-		return errors.New("file bundles need an X11 or Wayland clipboard; no graphical clipboard is available")
-	}
 }
 
 func isTerminal(w io.Writer) bool {
@@ -199,7 +141,7 @@ func SanitizeForTerminal(s string) string {
 		if r == '\n' || r == '\t' {
 			return r
 		}
-		if r < 0x20 || (r >= 0x7f && r <= 0x9f) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029' {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
 			return '·'
 		}
 		return r

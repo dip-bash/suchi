@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -71,57 +70,6 @@ func (x X11) readTarget(ctx context.Context, sel Selection, target string, maxBy
 	return out, true
 }
 
-// SetRaw writes bytes to an X11 selection without asking xclip to interpret
-// them as text. This mirrors xclip-copyfile's use of `xclip -selection
-// secondary -i`, which carries a gzip-compressed tar stream.
-func (x X11) SetRaw(ctx context.Context, data []byte, sel Selection) error {
-	return x.SetRawReader(ctx, bytes.NewReader(data), sel)
-}
-
-// SetRawReader streams bytes into an X11 selection without interpreting them
-// as text. This mirrors xclip-copyfile's gzip-tar transfer path.
-func (x X11) SetRawReader(ctx context.Context, src io.Reader, sel Selection) error {
-	if x.tool != "xclip" {
-		return errors.New("file bundles on X11 require xclip (xsel only supports text)")
-	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "xclip", "-selection", string(sel), "-i")
-	cmd.Stdin = src
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err := cmd.Run(); err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("xclip did not accept the file bundle before the timeout: %w", ctx.Err())
-		}
-		return fmt.Errorf("xclip failed to set the %s selection: %w", sel, err)
-	}
-	return nil
-}
-
-// ReadRaw reads the selected bytes without decoding them as UTF-8 text.
-func (x X11) ReadRaw(ctx context.Context, sel Selection) ([]byte, error) {
-	var buf bytes.Buffer
-	if err := x.ReadRawTo(ctx, sel, &buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// ReadRawTo streams an X11 selection to dst without UTF-8 conversion.
-func (x X11) ReadRawTo(ctx context.Context, sel Selection, dst io.Writer) error {
-	if x.tool != "xclip" {
-		return errors.New("file bundles on X11 require xclip (xsel only supports text)")
-	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "xclip", "-selection", string(sel), "-o")
-	cmd.Stdout = dst
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("read %s selection with xclip: %w", sel, err)
-	}
-	return nil
-}
-
 // read returns what is currently on the selection.
 func (x X11) read(ctx context.Context, sel Selection, lim Limits) (Item, bool) {
 	targets := x.targets(ctx, sel)
@@ -146,6 +94,12 @@ func (x X11) read(ctx context.Context, sel Selection, lim Limits) (Item, bool) {
 	return Item{}, false
 }
 
+// Read implements Backend.
+func (x X11) Read(ctx context.Context, sel Selection, lim Limits) (Item, bool, error) {
+	it, ok := x.read(ctx, sel, lim)
+	return it, ok, nil
+}
+
 // Set implements Backend. xclip/xsel fork into the background to keep
 // serving the selection, so the content outlives this process.
 func (x X11) Set(ctx context.Context, it Item, sel Selection) error {
@@ -163,8 +117,9 @@ func (x X11) Set(ctx context.Context, it Item, sel Selection) error {
 		return errors.New("copying images and files on X11 needs xclip (xsel only handles text)")
 	default:
 		// GNOME's file manager reads x-special/gnome-copied-files; everything else uses text/uri-list.
+		// A cut must use the GNOME format: it is the only one that carries the verb.
 		want := mimeURIList
-		if strings.Contains(os.Getenv("XDG_CURRENT_DESKTOP"), "GNOME") {
+		if it.Cut || strings.Contains(os.Getenv("XDG_CURRENT_DESKTOP"), "GNOME") {
 			want = mimeGnomeCopy
 		}
 		target := it.MIME

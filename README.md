@@ -4,9 +4,9 @@ Clipboard history and snippets for the terminal — on **Wayland**, **X11** and 
 
 ![Clip tab](docs/clip.png)
 
-- **Clip** tab: everything you copy — text, **images** and **copied files** — searchable, pinnable, one key (or click) to copy it back.
+- **Clip** tab: everything you copy or cut — text, **images** and **files/folders** — searchable, pinnable, one key (or click) to copy it back.
 - **Snip** tab: named snippets (a text expander): your email address, a long `ssh` line, a signature. A snippet can also be a **shell command** you run from the list.
-- Preview images right in the terminal (kitty, iTerm2, sixel, or colour block art everywhere else).
+- Preview images right in the terminal (kitty, iTerm2, sixel, or colour block art everywhere else), and read text and code **like `bat`**: syntax highlighting and line numbers.
 - One static binary, SQLite storage, mouse support, no config file.
 
 ![Image preview](docs/preview.png)
@@ -56,13 +56,27 @@ git tag v0.5.0 && git push origin v0.5.0
 ```sh
 suchi daemon        # start the background watcher (records every copy)
 suchi               # open the interface
+suchi -s            # open the interface on the Snip tab
 suchi stop          # stop the watcher
 suchi status        # what is running, which backend, where the database is
 ```
 
-**One window at a time:** opening a new `suchi` asks the one that is already open to exit, so a key binding such as
-`footclient -W 80x30 suchi` never piles up windows. The old window gets three seconds to shut down cleanly; if it
-is still holding the UI lock, Suchi force-stops that process as a last resort. Use `suchi --allow-multiple` to opt out.
+### Copying files and folders from the command line
+
+```sh
+suchi -c file1 folder1   # copy files/folders to the clipboard (and history)
+suchi -x file1 folder1   # cut them (paste moves the sources)
+suchi -p                 # paste the clipboard's files into the current directory
+```
+
+Copied and cut paths show up in the Clip tab like any other entry. Select one
+and press `Enter` to put it back on the clipboard, then run `suchi -p` wherever
+you want the files. `suchi -p` also prints text and writes image bytes to
+stdout when redirected (`suchi -p > image.png`).
+
+**One window at a time:** opening a new `suchi` closes the one that is already open, so a key binding such as
+`footclient -W 80x30 suchi` never piles up windows. (An open window that is busy running a command snippet closes
+when the command finishes.) Use `suchi --allow-multiple` to opt out.
 
 Start the watcher at every login with `systemctl --user enable --now suchi` (the installer sets the unit up), or add
 `suchi daemon` to your session's autostart.
@@ -96,6 +110,19 @@ The `e` popup scrolls with `j`/`k`/`↑`/`↓`/`PgUp`/`PgDn` or the mouse wheel;
 | click `Copy` / `Close`, or outside the popup | copy / close |
 
 (Terminals select text with `Shift`+drag while an app uses the mouse.)
+
+## Text and code preview (like `bat`)
+
+`e` on a text entry opens it with **syntax highlighting and line numbers**. The language is detected automatically
+(file name, shebang, or the content: Python, Go, Rust, JavaScript, C/C++, Java, JSON, YAML, TOML, HTML/XML, CSS,
+Markdown, SQL, diffs, Dockerfiles, shell commands…) and shown as the badge, e.g. `PYTHON`. Prose, URLs and
+addresses are left plain. Copied **text files** are shown the same way, by file name: the first 256 KB of the file.
+
+![Code preview](docs/highlight.png)
+
+Long lines wrap with the colours intact. Text is sanitised first, so escape sequences in the clipboard can never
+reach your terminal. Colours follow what your terminal supports (true colour, 256, 16, or none) and a dark or light
+theme; very large entries (over about 100 KB or 3,000 lines) get line numbers without colours.
 
 ## Images and files
 
@@ -138,42 +165,10 @@ returns to suchi when you press Enter. A snippet you copy never shows up in the 
 ```sh
 suchi get mail                    # print a snippet: ssh host "$(suchi get deploy)"
 echo "some text" | suchi add      # put text in the history (works anywhere, incl. TTYs)
-suchi --print                     # pick an entry in the UI, print it (images: raw bytes → redirect)
+suchi -s                          # open the Snip tab directly
 suchi clear [--all]               # delete history (pinned entries stay unless --all)
+suchi import [history.json]       # import the old Python version's history
 ```
-
-### Copy files and folders from the CLI
-
-Suchi can move file data through the clipboard as a gzip-compressed tar
-bundle. This is useful when working entirely in terminals, including across
-machines when both ends can access the same clipboard (for example, through
-X11 forwarding):
-
-```sh
-suchi -c report.pdf photo.jpg recording.mp4 src/  # copy docs, media and folders
-cd /tmp
-suchi -p                                      # extract the bundle into the current directory
-
-suchi -x build/                   # put build/ in the bundle, then remove it recursively
-cd /mnt/backup
-suchi -p                          # restore build/ here
-```
-
-`-c` keeps the source files. Files are copied as binary data, so images,
-audio, video and other media retain their original bytes. `-x` removes source
-files/directories only after the clipboard accepts the bundle. Directory trees
-are removed recursively. `-p [DIR]` pastes into the current directory or the
-directory supplied. Existing destination names are not overwritten, and
-archive paths that escape the destination are rejected.
-
-On X11, Suchi uses the **SECONDARY** selection and the same gzip-tar payload as
-`xclip-copyfile` / `xclip-pastefile`, so these tools can interoperate. On
-Wayland, where data-control has no SECONDARY selection, Suchi uses the regular
-clipboard with an `application/gzip` MIME type. A graphical clipboard is
-required; binary file transfer is not available on a plain TTY.
-
-Cut is safer than `xclip-cutfile`: directory trees are removed recursively,
-and source deletion happens only after the bundle has been published.
 
 ## How it talks to your clipboard
 
@@ -188,10 +183,11 @@ and source deletion happens only after the bundle has been published.
 
 ### Pasting in a TTY
 
-A text console has no paste buffer, so bind a key to `suchi --print`. For bash (`~/.bashrc`):
+A text console has no paste buffer, so bind a key to `suchi -p`. On a TTY it
+opens the picker and prints the chosen entry. For bash (`~/.bashrc`):
 
 ```sh
-bind -x '"\C-x\C-v": __s=$(suchi --print); READLINE_LINE="${READLINE_LINE:0:READLINE_POINT}${__s}${READLINE_LINE:READLINE_POINT}"; READLINE_POINT=$((READLINE_POINT+${#__s}))'
+bind -x '"\C-x\C-v": __s=$(suchi -p); READLINE_LINE="${READLINE_LINE:0:READLINE_POINT}${__s}${READLINE_LINE:READLINE_POINT}"; READLINE_POINT=$((READLINE_POINT+${#__s}))'
 ```
 
 ## Configuration
@@ -204,10 +200,12 @@ Flags (before or after the command) and environment variables; defaults in brack
 | `--limit N` | `SUCHI_LIMIT` | history size, pinned entries exempt [500] |
 | `--max-size BYTES` | `SUCHI_MAX_BYTES` | skip bigger clipboard text [1 MiB] |
 | `--max-media BYTES` | `SUCHI_MAX_MEDIA` | skip bigger images [16 MiB] |
-| `-s, --selection` | | `clipboard` or `primary` [clipboard] |
 | `--backend` | `SUCHI_BACKEND` | `auto`, `wayland`, `x11`, `tty` [auto] |
+| `-s, --selection` | | open the interface on the Snip tab |
+| `-c, --copy PATH...` | | copy files/folders to the clipboard and history |
+| `-x, --cut PATH...` | | cut files/folders to the clipboard and history |
+| `-p, --paste` | | paste files/folders into the current directory |
 | `--allow-multiple` | | do not close an interface that is already open |
-| `--ascii` | | plain ASCII UI (automatic on the Linux console / non-UTF-8 locales) |
 | | `SUCHI_IMAGE` | image protocol, see above |
 
 The daemon logs to `~/.local/state/suchi/suchi.log`. The database is created `0600` in a `0700` directory.
@@ -218,20 +216,22 @@ The daemon logs to `~/.local/state/suchi/suchi.log`. The database is created `06
   raced to create the database. Upgrading repairs an affected database in place; nothing is lost.
 - **Nothing is recorded on GNOME/Wayland or X11** — install `xclip` (`sudo apt install xclip`), then `suchi stop && suchi daemon`.
 - **Pictures show as colour blocks** — that is the universal fallback. Check `echo $TERM $TERM_PROGRAM` and set `SUCHI_IMAGE` if your terminal supports a graphics protocol.
+- **A window did not close when I opened a new one** — fixed in 0.5.2 (a shutdown deadlock when windows were opened in quick succession). If a window is busy running a command snippet it closes when the command ends.
 - **Mouse does nothing** — your terminal or multiplexer may not forward mouse events (tmux: `set -g mouse on`).
 
 ## Code layout
 
 ```
 cmd/suchi/              entry point (calls internal/cli)
-internal/cli/           command line: UI, daemon, stop, status, add, get, clear, file transfer
+internal/cli/           command line: UI, daemon, stop, status, add, get, import, clear
 internal/config/        XDG paths, limits, env overrides
 internal/store/         SQLite: race-safe migrations, clips (text/image/file), snippets
 internal/clipboard/     backends: wayland (wire protocol), x11 (XFixes + xclip), tty (OSC 52)
-internal/filebundle/    gzip-tar file bundles and safe extraction for CLI copy/cut/paste
+internal/fileop/        copy/move files and folders for `suchi -p`
 internal/daemon/        watcher loop, detached start
 internal/pidlock/       flock-based single-instance lock (daemon, and "newest window wins" for the UI)
 internal/preview/       image decoding, kitty/iTerm2/sixel/half-block rendering, file types
+internal/highlight/     bat-style syntax highlighting, line numbers, language detection (Chroma)
 internal/tui/           Bubble Tea UI: tabs, list, popup (Viewport), form, mouse (BubbleZone), springs (Harmonica)
 internal/textutil/      sanitising, width-aware truncation/wrapping, matching
 ```
@@ -239,4 +239,4 @@ internal/textutil/      sanitising, width-aware truncation/wrapping, matching
 Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea), [Lip Gloss](https://github.com/charmbracelet/lipgloss),
 [Bubbles](https://github.com/charmbracelet/bubbles) (Viewport), [BubbleZone](https://github.com/lrstanley/bubblezone) (mouse),
 [Harmonica](https://github.com/charmbracelet/harmonica) (spring animation) and [ntcharts](https://github.com/NimbleMarkets/ntcharts)
-(the canvas the block-art previews are drawn on).
+(the canvas the block-art previews are drawn on), and [Chroma](https://github.com/alecthomas/chroma) (syntax highlighting).

@@ -167,6 +167,22 @@ func watchOnce(t *testing.T, lim Limits) (Item, bool) {
 
 var bigLimits = Limits{MaxText: 1 << 20, MaxMedia: 1 << 20}
 
+func TestWaylandReadReturnsCurrentSelection(t *testing.T) {
+	startFake(t, "hello from Read", "text/plain")
+	it, ok, err := Wayland{}.Read(context.Background(), Clipboard, bigLimits)
+	if err != nil || !ok || it.Kind != KindText || it.Text != "hello from Read" {
+		t.Fatalf("got %+v ok=%v err=%v", it, ok, err)
+	}
+}
+
+func TestWaylandReadKeepsTheCutMarker(t *testing.T) {
+	startFake(t, "cut\nfile:///home/u/a", mimeGnomeCopy, "text/plain")
+	it, ok, err := Wayland{}.Read(context.Background(), Clipboard, bigLimits)
+	if err != nil || !ok || it.Kind != KindFiles || !it.Cut || it.Text != "/home/u/a" {
+		t.Fatalf("got %+v ok=%v err=%v", it, ok, err)
+	}
+}
+
 func TestWaylandWatchReadsTextSelection(t *testing.T) {
 	startFake(t, "héllo from the compositor", "image/png", "text/plain;charset=utf-8")
 	got, ok := watchOnce(t, bigLimits)
@@ -335,13 +351,6 @@ func TestSanitizeForTerminal(t *testing.T) {
 	}
 }
 
-func TestSanitizeForTerminalNeutralisesBidiAndFormatCharacters(t *testing.T) {
-	got := SanitizeForTerminal("safe\u202Etxt\u2066hidden\u2069\u2028next")
-	if got != "safe·txt·hidden··next" {
-		t.Fatalf("format controls were not neutralised: %q", got)
-	}
-}
-
 func TestInjectableOnlyAllowsOneCleanLine(t *testing.T) {
 	for s, want := range map[string]bool{
 		"ls -la": true, "echo héllo": true, "": false,
@@ -476,32 +485,32 @@ func TestFormatsForFiles(t *testing.T) {
 	}
 }
 
+func TestFormatsMarkCut(t *testing.T) {
+	fs := Formats(Item{Kind: KindFiles, Text: "/a", Cut: true})
+	for _, f := range fs {
+		if f.MIME == mimeGnomeCopy && !bytes.HasPrefix(f.Data, []byte("cut\n")) {
+			t.Fatalf("cut item offered as %q", f.Data)
+		}
+	}
+}
+
 func TestItemFramingRoundTrip(t *testing.T) {
 	for _, it := range []Item{
 		{Kind: KindText, Text: "line1\nline2 ✓"},
-		{Kind: KindFiles, MIME: "text/uri-list", Text: "/a/b\n/c/d"},
+		{Kind: KindFiles, MIME: "text/uri-list", Text: "/a/b\n/c/d", Cut: true},
 		{Kind: KindImage, MIME: "image/png", Data: []byte{0, 1, 2, '\n', 255}},
-		{Kind: KindArchive, MIME: "application/gzip", Data: []byte{31, 139, 0, 1, 2, 255}},
 	} {
 		var buf bytes.Buffer
 		if err := encodeItem(&buf, it); err != nil {
 			t.Fatal(err)
 		}
 		got, err := decodeItem(&buf)
-		if err != nil || got.Kind != it.Kind || got.Text != it.Text || got.MIME != it.MIME || !bytes.Equal(got.Data, it.Data) {
+		if err != nil || got.Kind != it.Kind || got.Text != it.Text || got.MIME != it.MIME ||
+			got.Cut != it.Cut || !bytes.Equal(got.Data, it.Data) {
 			t.Fatalf("%+v -> %+v (%v)", it, got, err)
 		}
 	}
 	if _, err := decodeItem(bytes.NewReader([]byte("not json\nbody"))); err == nil {
 		t.Fatal("garbage must be rejected")
-	}
-}
-
-func TestFormatsForArchive(t *testing.T) {
-	data := []byte{31, 139, 8, 0, 255}
-	formats := Formats(Item{Kind: KindArchive, MIME: "application/gzip", Data: data})
-	if len(formats) != 2 || formats[0].MIME != "application/gzip" || formats[1].MIME != "application/x-gzip" ||
-		!bytes.Equal(formats[0].Data, data) || !bytes.Equal(formats[1].Data, data) {
-		t.Fatalf("unexpected archive formats: %+v", formats)
 	}
 }

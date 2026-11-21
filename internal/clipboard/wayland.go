@@ -344,10 +344,6 @@ func (w *wlConn) setup() error {
 
 // readMime reads one representation of an offer through a pipe.
 func (w *wlConn) readMime(id uint32, mime string, maxBytes int) ([]byte, bool) {
-	return w.readMimeWithTimeout(id, mime, maxBytes, 3*time.Second)
-}
-
-func (w *wlConn) readMimeWithTimeout(id uint32, mime string, maxBytes int, timeout time.Duration) ([]byte, bool) {
 	r, wr, err := os.Pipe()
 	if err != nil {
 		return nil, false
@@ -358,7 +354,7 @@ func (w *wlConn) readMimeWithTimeout(id uint32, mime string, maxBytes int, timeo
 	if err != nil {
 		return nil, false
 	}
-	_ = r.SetReadDeadline(time.Now().Add(timeout))
+	_ = r.SetReadDeadline(time.Now().Add(3 * time.Second))
 	data, err := io.ReadAll(io.LimitReader(r, int64(maxBytes)+1))
 	if err != nil || len(data) > maxBytes {
 		return nil, false
@@ -398,6 +394,25 @@ func (w *wlConn) deliver(kind Selection, lim Limits, fn func(Item)) {
 	if it, ok := w.readOffer(last.id, lim); ok {
 		fn(it)
 	}
+}
+
+// Read implements Backend.
+func (Wayland) Read(ctx context.Context, sel Selection, lim Limits) (Item, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return Item{}, false, err
+	}
+	w, err := dialWayland()
+	if err != nil {
+		return Item{}, false, err
+	}
+	defer w.close()
+	if sel == Primary && !w.hasPrimary {
+		return Item{}, false, errors.New("this compositor does not support the primary selection")
+	}
+	var got Item
+	ok := false
+	w.deliver(sel, lim, func(it Item) { got, ok = it, true })
+	return got, ok, nil
 }
 
 // Watch implements Backend.

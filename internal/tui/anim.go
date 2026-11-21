@@ -45,9 +45,9 @@ func frame() tea.Cmd {
 	return tea.Tick(time.Second/60, func(t time.Time) tea.Msg { return frameMsg(t) })
 }
 
-// The springs: the tab pill slides, the list glides when it scrolls, and a
-// popup unfolds. Critically damped (1.0) means no overshoot where that would
-// look wrong (text cannot be drawn half a cell off).
-func newAnimations() (pill, scroll, open spring) {
-	return newSpring(16, 1.0, 0), newSpring(18, 1.0, 0), newSpring(14, 0.85, 1)
+// The springs: the tab pill slides and the list glides when it scrolls.
+// Critically damped (1.0) means no overshoot where that would look wrong
+// (text cannot be drawn half a cell off).
+func newAnimations() (pill, scroll spring) {
+	return newSpring(16, 1.0, 0), newSpring(18, 1.0, 0)
 }
